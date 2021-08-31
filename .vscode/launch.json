@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "mp0-s",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cli/mp0/server",
+            "env": {},
+            "args": []
+        },
+        {
+            "name": "mp0-c",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cli/mp0/client",
+            "env": {},
+            "args": []
+        }
+    ]
+}

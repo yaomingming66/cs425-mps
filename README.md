@@ -4,9 +4,18 @@
 
 ### Golang
 
+[Install](https://golang.org/doc/install)
+
 ```bash
 # version >= 1.13
 go version
+```
+
+### VSCode
+
+```bash
+# extension id golang.go
+code --install-extension golang.go
 ```
 
 ## MP0

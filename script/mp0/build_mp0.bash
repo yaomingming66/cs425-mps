@@ -14,6 +14,7 @@ if ! [ -x "$(command -v go)" ]; then
     exit 1
 fi
 
+# GOOS=linux GOARCH="amd64"
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
 go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-c" "${PROJECT_ROOT}/cli/mp0/client"
 go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-s" "${PROJECT_ROOT}/cli/mp0/server"

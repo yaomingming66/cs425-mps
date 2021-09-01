@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bamboovir/cs425/lib/mp0/types"
 	log "github.com/sirupsen/logrus"
@@ -32,7 +33,7 @@ func NewRootCMD() *cobra.Command {
 			name := args[0]
 			host := args[1]
 			port := args[2]
-			addr := fmt.Sprintf("%s:%s", host, port)
+			addr := net.JoinHostPort(host, port)
 			err = CopyStdinToTCP(name, addr)
 			return err
 		},
@@ -43,7 +44,7 @@ func NewRootCMD() *cobra.Command {
 
 func CopyStdinToTCP(name string, addr string) (err error) {
 	log.Infof("node [%s] tries to connect to the server [%s]", name, addr)
-	client, err := net.Dial("tcp", addr)
+	client, err := net.DialTimeout("tcp", addr, time.Second*10)
 	if err != nil {
 		log.Errorf("node [%s] failed to connect to the server [%s]", name, addr)
 		return err

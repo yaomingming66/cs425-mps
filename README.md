@@ -22,18 +22,25 @@ code --install-extension golang.go
 
 ## MP0
 
+```bash
+# Client Test
+socat TCP-LISTEN:8080 -
+./bin/mp0-c A 127.0.0.1 8080
+python3 ./script/mp0/generator.py 1 100 | ./bin/mp0-c A 127.0.0.1 8080
+```
+
 ### Commonly used quick commands
 
 fmt code
 
 ```bash
-bash ./script/fmt.bash
+bash ./script/unix/fmt.bash
 ```
 
 build mp0 static binary to ./bin
 
 ```bash
-bash ./script/mp0/build_mp0.bash
+bash ./script/unix/mp0/build.bash
 ```
 
 ```bash
@@ -53,4 +60,10 @@ test All
 
 ```bash
 gotest -mod vendor -v ./...
+```
+
+trace log
+
+```bash
+LOG=trace
 ```

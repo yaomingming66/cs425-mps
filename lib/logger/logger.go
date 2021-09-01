@@ -8,7 +8,12 @@ import (
 
 func SetupLogger(logger *log.Logger) *log.Logger {
 	logger.SetLevel(log.TraceLevel)
-	logger.SetReportCaller(true)
+	logEnv := os.Getenv("LOG")
+	if logEnv == "trace" {
+		logger.SetReportCaller(true)
+	} else {
+		logger.SetReportCaller(false)
+	}
 	logger.SetFormatter(&log.TextFormatter{
 		PadLevelText:              true,
 		ForceColors:               true,

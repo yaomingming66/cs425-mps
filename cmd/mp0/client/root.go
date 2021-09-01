@@ -48,6 +48,7 @@ func CopyStdinToTCP(name string, addr string) (err error) {
 		log.Errorf("node [%s] failed to connect to the server [%s]", name, addr)
 		return err
 	}
+	log.Infof("node [%s] successfully connected to the server [%s]", name, addr)
 	defer client.Close()
 
 	encoder := json.NewEncoder(client)
@@ -70,7 +71,13 @@ func CopyStdinToTCP(name string, addr string) (err error) {
 			Payload:   payload,
 			From:      name,
 		}
-		err := encoder.Encode(msg)
+		msgbytes, err := json.Marshal(msg)
+		if err != nil {
+			log.Errorf("marshal message failed %v", err)
+			return err
+		}
+		log.Infof("%s", string(msgbytes))
+		err = encoder.Encode(msg)
 		if err != nil {
 			log.Errorf("encode message failed %v", err)
 			return err

@@ -1,5 +1,13 @@
 # Visualization
 
+## Development Environment configuration
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
 ## MP0
 
 we want to track two metrics:

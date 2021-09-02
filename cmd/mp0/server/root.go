@@ -89,7 +89,6 @@ func handleRequest(conn net.Conn, connectionEstablishedTimestamp float64) {
 	isFirst := true
 	var currTimestamp float64
 	for {
-		currTimestamp = timeNow()
 		err := decoder.Decode(&msg)
 		if err != nil {
 			if err == io.EOF {
@@ -101,6 +100,7 @@ func handleRequest(conn net.Conn, connectionEstablishedTimestamp float64) {
 			break
 		}
 
+		currTimestamp = timeNow()
 		if isFirst {
 			fmt.Printf("%f - %s connected\n", connectionEstablishedTimestamp, msg.From)
 			isFirst = false

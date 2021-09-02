@@ -17,7 +17,7 @@ def parseMetrics(line: str) -> Dict:
     rst = {
         "timestamp": float(obj["timestamp"]),
         "delay": float(obj["delay"]),
-        "size": obj["size"],
+        "size": int(obj["size"]),
     }
     return rst
 
@@ -111,7 +111,9 @@ def reportMetrics():
             "bandwidth": [x["bandwidth"] for x in reports],
         }
     )
-    sns.relplot(x="time", y="bandwidth", kind="line", data=df)
+    f = sns.relplot(x="time", y="bandwidth", kind="line", data=df)
+    f.set_axis_labels(x_var="time: second", y_var="bandwidth: bytes per second")
+
     df = pd.DataFrame(
         {
             "time": np.arange(len(reports)),
@@ -125,7 +127,7 @@ def reportMetrics():
     g = sns.relplot(
         x="time", y="value", hue="variable", style="variable", kind="line", data=df
     )
-    g.set_axis_labels(x_var="time", y_var="delay")
+    g.set_axis_labels(x_var="time: second", y_var="delay: second")
     plt.show()
 
 

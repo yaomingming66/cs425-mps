@@ -1,2 +1,5 @@
-gofmt -s -w -l -d .
-goimports -w -l -d .
+#!/bin/bash
+
+gofmt -s -w -l -d ./cli ./cmd ./lib
+goimports -w -l -d ./cli ./cmd ./lib
+echo "Formated"

@@ -24,7 +24,7 @@ code --install-extension golang.go
 
 ```bash
 # Client Test
-socat TCP-LISTEN:8080 -
+./bin/mp0-s 8080 or socat TCP-LISTEN:8080 -
 ./bin/mp0-c A 127.0.0.1 8080
 python3 ./script/mp0/generator.py 1 100 | ./bin/mp0-c A 127.0.0.1 8080
 ```
@@ -36,11 +36,17 @@ fmt code
 ```bash
 bash ./script/unix/fmt.bash
 ```
+```linux
+./script/linux/fmt.bash
+```
 
 build mp0 static binary to ./bin
 
 ```bash
 bash ./script/unix/mp0/build.bash
+```
+```linux
+./script/linux/mp0/build.sh
 ```
 
 ```bash

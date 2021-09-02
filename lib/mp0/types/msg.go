@@ -7,7 +7,7 @@ type Msg struct {
 }
 
 type Params struct {
-	Delay     string `json:"delay from receiving"`
+	Delay     string `json:"delay"`
 	TimeStamp string `json:"timestamp"`
-	Size      string `json:"size of payload"`
+	Size      string `json:"size"`
 }

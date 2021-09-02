@@ -3,10 +3,10 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"time"
-	"unicode/utf8"
 
 	"github.com/bamboovir/cs425/lib/mp0/types"
 	log "github.com/sirupsen/logrus"
@@ -43,24 +43,24 @@ func NewRootCMD() *cobra.Command {
 			}
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			portRawStr := args[0]
 			log.Infof("try start server in port %s", portRawStr)
-			TCPToMath(portRawStr)
-			return nil
+			err = TCPToMath(portRawStr)
+			return err
 		},
 	}
 
 	return cmd
 }
 
-func TCPToMath(portStr string) {
+func TCPToMath(portStr string) (err error) {
 	// Listen for incoming connections.
 	addr := net.JoinHostPort(CONN_HOST, portStr)
 	socket, err := net.Listen(CONN_TYPE, addr)
 	if err != nil {
 		log.Errorf("Error listening: %v", err.Error())
-		return
+		return err
 	}
 	// Close the listener when the application closes.
 	defer socket.Close()
@@ -68,59 +68,66 @@ func TCPToMath(portStr string) {
 	for {
 		// Listen for an incoming connection.
 		conn, err := socket.Accept()
+		connectionEstablishedTimestamp := timeNow()
 		if err != nil {
 			log.Errorf("Error accepting: %v", err.Error())
-			return
+			continue
 		}
 
 		// Handle connections in a new goroutine.
-		go handleRequest(conn)
+		go handleRequest(conn, connectionEstablishedTimestamp)
 	}
+
 }
 
 // Handles incoming requests.
-func handleRequest(conn net.Conn) {
-	d := json.NewDecoder(conn)
+func handleRequest(conn net.Conn, connectionEstablishedTimestamp float64) {
+	defer conn.Close()
+	decoder := json.NewDecoder(conn)
 	var msg types.Msg
 
-	fmt.Printf("%f - %s connected", timeNow(), msg.From)
-
+	isFirst := true
+	var currTimestamp float64
 	for {
-		if d.Decode(&msg) != nil {
-			log.Errorf("socket closed or decode message failed")
+		currTimestamp = timeNow()
+		err := decoder.Decode(&msg)
+		if err != nil {
+			if err == io.EOF {
+				fmt.Printf("%f - %s disconnected\n", timeNow(), msg.From)
+				log.Errorf("socket closed reach EOF: %v", err)
+				break
+			}
+			log.Errorf("decode message failed: %v", err)
 			break
 		}
-		fmt.Printf("%f %s\n%s\n", timeNow(), msg.From, msg.Payload)
 
-		timeNow := timeNow()
+		if isFirst {
+			fmt.Printf("%f - %s connected\n", connectionEstablishedTimestamp, msg.From)
+			isFirst = false
+		}
+
+		fmt.Printf("%f %s %s\n", currTimestamp, msg.From, msg.Payload)
 		timeSendFloat, err := strconv.ParseFloat(msg.TimeStamp, 64)
 		if err != nil {
-			log.Info("Error reading:", err.Error())
-			break
+			log.Infof("parse float timestamp failed : %v, skip", err)
+			continue
 		}
-		var sendPayloadBytes int = utf8.RuneCountInString(msg.Payload)
+		payloadSizeInBytes := len(msg.Payload)
 		res := types.Params{
-			Delay:     strconv.FormatFloat(timeNow-timeSendFloat, 'E', -1, 64),
-			TimeStamp: strconv.FormatFloat(timeNow, 'E', -1, 64),
-			Size:      strconv.Itoa(sendPayloadBytes),
+			Delay:     strconv.FormatFloat(currTimestamp-timeSendFloat, 'E', -1, 64),
+			TimeStamp: strconv.FormatFloat(currTimestamp, 'E', -1, 64),
+			Size:      strconv.Itoa(payloadSizeInBytes),
 		}
 
 		resbytes, err := json.Marshal(res)
 		if err != nil {
-			log.Errorf("marshal message failed %v", err)
-			break
+			log.Errorf("marshal message failed %v, skip", err)
+			continue
 		}
 		log.Infof("%s", string(resbytes))
-
-		// Send a response back to person contacting us.
-		conn.Write([]byte("message received."))
 	}
-	fmt.Printf("%f - %s disconnected", timeNow(), msg.From)
-
-	// Close the connection when you're done with it.
-	conn.Close()
 }
 
 func timeNow() float64 {
-	return float64(time.Now().UnixNano()) / float64(time.Second)
+	return float64(time.Now().UnixNano()) / float64((time.Second))
 }

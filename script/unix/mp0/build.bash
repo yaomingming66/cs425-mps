@@ -16,6 +16,12 @@ fi
 
 # GOOS=linux GOARCH="amd64"
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
-go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-c" "${PROJECT_ROOT}/cli/mp0/client"
-go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-s" "${PROJECT_ROOT}/cli/mp0/server"
 
+GOOS="linux" GOARCH="amd64" go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-c-linux-amd64" "${PROJECT_ROOT}/cli/mp0/client"
+GOOS="linux" GOARCH="amd64" go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-s-linux-amd64" "${PROJECT_ROOT}/cli/mp0/server"
+
+GOOS="darwin" GOARCH="arm64" go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-c-darwin-arm64" "${PROJECT_ROOT}/cli/mp0/client"
+GOOS="darwin" GOARCH="arm64" go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-s-darwin-arm64" "${PROJECT_ROOT}/cli/mp0/server"
+
+GOOS="windows" GOARCH="amd64" go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-c-windows-amd64.exe" "${PROJECT_ROOT}/cli/mp0/client"
+GOOS="windows" GOARCH="amd64" go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp0-s-windows-amd64.exe" "${PROJECT_ROOT}/cli/mp0/server"

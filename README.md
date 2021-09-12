@@ -56,6 +56,12 @@ mp0-s 8080 1> /dev/null
 mp0-s 8080 2> /dev/null
 ```
 
+Find this list of possible platforms
+
+```bash
+go tool dist list
+```
+
 test Spec
 
 ```bash

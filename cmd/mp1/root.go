@@ -1,10 +1,15 @@
 package mp1
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"strconv"
 
+	"github.com/bamboovir/cs425/cmd/mp1/client"
+	"github.com/bamboovir/cs425/cmd/mp1/server"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 func ParsePort(portRawStr string) (port int, err error) {
@@ -21,13 +26,23 @@ func NewRootCMD() *cobra.Command {
 		Short: "mp1",
 		Long:  "receive transactions events from the standard input (as sent by the generator) and send them to the decentralized node",
 		Args:  cobra.ExactArgs(3),
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			nodeIDStr := args[0]
-			portStr := args[1]
-			configPathStr := args[2]
-			go RunServer(portStr)
-			go RunClients(nodeIDStr, configPathStr)
-			select {}
+		Run: func(cmd *cobra.Command, args []string) {
+			nodeID := args[0]
+			port := args[1]
+			configPath := args[2]
+			errG, _ := errgroup.WithContext(context.Background())
+			errG.Go(
+				func() error {
+					return server.RunServer(nodeID, port)
+				},
+			)
+
+			go client.RunClients(nodeID, configPath)
+
+			err := errG.Wait()
+			if err != nil {
+				os.Exit(1)
+			}
 		},
 	}
 

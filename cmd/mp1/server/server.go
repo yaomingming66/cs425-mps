@@ -1,4 +1,4 @@
-package mp1
+package server
 
 import (
 	"bufio"
@@ -14,21 +14,25 @@ const (
 	CONN_TYPE = "tcp"
 )
 
-func RunServer(portStr string) (err error) {
-	addr := net.JoinHostPort(CONN_HOST, portStr)
+var (
+	logger = log.WithField("src", "server")
+)
+
+func RunServer(nodeID string, port string) (err error) {
+	addr := net.JoinHostPort(CONN_HOST, port)
 	socket, err := net.Listen(CONN_TYPE, addr)
 
 	if err != nil {
-		log.Errorf("error listening: %v", err)
+		logger.Errorf("node [%s] error listening: %v", nodeID, err)
 		return err
 	}
 
 	defer socket.Close()
-	log.Infof("listening on: %s", addr)
+	logger.Infof("node [%s] success listening on: %s", nodeID, addr)
 	for {
 		conn, err := socket.Accept()
 		if err != nil {
-			log.Errorf("error accepting: %v", err)
+			logger.Errorf("node [%s] error accepting: %v", nodeID, err)
 			continue
 		}
 
@@ -45,37 +49,35 @@ func handleConn(conn net.Conn) {
 		firstLine := scanner.Text()
 		err := json.Unmarshal([]byte(firstLine), hi)
 		if err != nil || hi.From == "" {
-			log.Errorf("unrecognized event message, except hi")
+			logger.Errorf("unrecognized event message, except hi")
 			return
 		}
+		logger.Infof("node [%s] connected", hi.From)
 	}
-
-	log.Infof("node[%s] connected", hi.From)
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		log.Info(line)
 		msg, err := types.DecodePolymorphicMessage([]byte(line))
 		if err != nil {
-			log.Errorf("decode message failed: %v", err)
+			logger.Errorf("decode message failed: %v", err)
 			continue
 		}
 
 		switch v := msg.(type) {
 		case *types.Deposit:
-			log.Infof("deposit: %s %d", v.Account, v.Amount)
+			logger.Infof("deposit: %s %d", v.Account, v.Amount)
 		case *types.Transfer:
-			log.Infof("tranfer: %s -> %s %d", v.FromAccount, v.ToAccount, v.Amount)
+			logger.Infof("tranfer: %s -> %s %d", v.FromAccount, v.ToAccount, v.Amount)
 		default:
-			log.Errorf("unrecognized event message")
+			logger.Errorf("unrecognized event message")
 		}
 	}
 
 	err := scanner.Err()
 
 	if err != nil {
-		log.Errorf("node[%s] connection err: %v", hi.From, err)
+		logger.Errorf("node [%s] connection err: %v", hi.From, err)
 	} else {
-		log.Infof("node[%s] connection reach EOF", hi.From)
+		logger.Infof("node [%s] connection reach EOF", hi.From)
 	}
 }

@@ -37,6 +37,12 @@ bash ./script/unix/mp1/quick_build.bash
 # Release Build
 bash ./script/unix/mp1/build.bash
 # Usage
+
+# 2 nodes for local test
+./bin/mp1 A 8080 ./lib/mp1/config/2/config_a.txt
+./bin/mp1 B 8081 ./lib/mp1/config/2/config_b.txt
+
+# 3 nodes
 ./bin/mp1 a 8080 ./lib/mp1/config/config_a.txt
 ./bin/mp1 b 8081 ./lib/mp1/config/config_b.txt
 ./bin/mp1 c 8082 ./lib/mp1/config/config_c.txt

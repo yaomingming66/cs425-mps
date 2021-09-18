@@ -14,12 +14,21 @@ func SetupLogger(logger *log.Logger) *log.Logger {
 	} else {
 		logger.SetReportCaller(false)
 	}
-	logger.SetFormatter(&log.TextFormatter{
-		PadLevelText:              true,
-		ForceColors:               true,
-		EnvironmentOverrideColors: true,
-		DisableTimestamp:          true,
-	})
+
+	if logEnv == "json" {
+		log.SetFormatter(&log.JSONFormatter{
+			DisableTimestamp: true,
+			PrettyPrint:      false,
+		})
+	} else {
+		logger.SetFormatter(&log.TextFormatter{
+			PadLevelText:              true,
+			ForceColors:               false,
+			EnvironmentOverrideColors: true,
+			DisableTimestamp:          true,
+		})
+	}
+
 	logger.SetOutput(os.Stderr)
 	return logger
 }

@@ -43,13 +43,13 @@ bash ./script/unix/mp1/build.bash
 ./bin/mp1 B 8081 ./lib/mp1/config/2/config_b.txt
 
 # 3 nodes
-./bin/mp1 a 8080 ./lib/mp1/config/config_a.txt
-./bin/mp1 b 8081 ./lib/mp1/config/config_b.txt
-./bin/mp1 c 8082 ./lib/mp1/config/config_c.txt
+./bin/mp1 A 8080 ./lib/mp1/config/config_a.txt
+./bin/mp1 B 8081 ./lib/mp1/config/config_b.txt
+./bin/mp1 C 8082 ./lib/mp1/config/config_c.txt
 
-python3 -u gentx.py 0.5 | ./bin/mp1 a 8080 ./lib/mp1/config/config_a.txt
-python3 -u gentx.py 0.5 | ./bin/mp1 b 8081 ./lib/mp1/config/config_b.txt
-python3 -u gentx.py 0.5 | ./bin/mp1 c 8082 ./lib/mp1/config/config_c.txt
+python3 -u gentx.py 0.5 | ./bin/mp1 a 8080 ./lib/mp1/config/3/config_a.txt
+python3 -u gentx.py 0.5 | ./bin/mp1 b 8081 ./lib/mp1/config/3/config_b.txt
+python3 -u gentx.py 0.5 | ./bin/mp1 c 8082 ./lib/mp1/config/3/config_c.txt
 ```
 
 ### Commonly used quick commands

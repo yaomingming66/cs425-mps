@@ -30,16 +30,14 @@ func RunClients(nodeID string, configPath string) (err error) {
 
 	for _, c := range nodesConfig.ConfigItems {
 		addr := net.JoinHostPort(c.NodeHost, c.NodePort)
-		subEmitter := make(chan []byte)
+		subEmitter := make(chan []byte, 1000)
 		subEmitters = append(subEmitters, subEmitter)
 		go RunClient(nodeID, c.NodeID, addr, subEmitter)
 	}
 
 	for msg := range rootEmitter {
 		for _, subEmitter := range subEmitters {
-			go func(emitter chan []byte) {
-				emitter <- msg
-			}(subEmitter)
+			subEmitter <- msg
 		}
 	}
 

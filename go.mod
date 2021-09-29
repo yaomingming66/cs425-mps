@@ -3,7 +3,10 @@ module github.com/bamboovir/cs425
 go 1.16
 
 require (
+	github.com/Workiva/go-datastructures v1.0.53 // indirect
+	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/fatih/color v1.12.0 // indirect
+	github.com/gammazero/deque v0.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.13 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rakyll/gotest v0.0.6 // indirect

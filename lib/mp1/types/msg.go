@@ -87,22 +87,6 @@ type Account struct {
 	Amount  int    `json:"amount"`
 }
 
-type Balances struct {
-	Accounts []Account
-}
-
-func (b *Balances) Encode() string {
-	builder := &strings.Builder{}
-
-	builder.WriteString("BALANCES")
-	for i := range b.Accounts {
-		account := b.Accounts[i]
-		builder.WriteString(fmt.Sprintf(" %s:%d", account.Account, account.Amount))
-	}
-
-	return builder.String()
-}
-
 func NewHi(from string) *Hi {
 	return &Hi{
 		From: from,

@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/bamboovir/cs425/cmd/mp1/server"
 	"github.com/bamboovir/cs425/lib/mp1/config"
 	"github.com/bamboovir/cs425/lib/mp1/types"
 	"github.com/bamboovir/cs425/lib/retry"
@@ -17,7 +18,7 @@ var (
 	logger = log.WithField("src", "client")
 )
 
-func RunClients(nodeID string, configPath string) (err error) {
+func RunClients(nodeID string, nodePort, configPath string) (err error) {
 	nodesConfig, err := config.ConfigParser(configPath)
 	if err != nil {
 		logger.Errorf("config parse err: %v", err)
@@ -27,6 +28,13 @@ func RunClients(nodeID string, configPath string) (err error) {
 	rootEmitter := ReaderPipeline(os.Stdin)
 
 	subEmitters := make([]chan []byte, 0)
+
+	// Append Self
+	nodesConfig.ConfigItems = append(nodesConfig.ConfigItems, config.ConfigItem{
+		NodeID:   nodeID,
+		NodeHost: server.CONN_HOST,
+		NodePort: nodePort,
+	})
 
 	for _, c := range nodesConfig.ConfigItems {
 		addr := net.JoinHostPort(c.NodeHost, c.NodePort)

@@ -37,7 +37,7 @@ func NewRootCMD() *cobra.Command {
 				},
 			)
 
-			go client.RunClients(nodeID, configPath)
+			go client.RunClients(nodeID, port, configPath)
 
 			err := errG.Wait()
 			if err != nil {

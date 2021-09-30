@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 
+	"github.com/bamboovir/cs425/lib/mp1/transaction"
 	"github.com/bamboovir/cs425/lib/mp1/types"
 	log "github.com/sirupsen/logrus"
 )
@@ -15,7 +16,8 @@ const (
 )
 
 var (
-	logger = log.WithField("src", "server")
+	logger               = log.WithField("src", "server")
+	transactionProcessor = transaction.NewTransactionProcessor()
 )
 
 func RunServer(nodeID string, port string) (err error) {
@@ -66,8 +68,12 @@ func handleConn(conn net.Conn) {
 		switch v := msg.(type) {
 		case *types.Deposit:
 			logger.Infof("deposit: %s %d", v.Account, v.Amount)
+			_ = transactionProcessor.Deposit(v.Account, v.Amount)
+			logger.Info(transactionProcessor.BalancesSnapshotStdString())
 		case *types.Transfer:
 			logger.Infof("tranfer: %s -> %s %d", v.FromAccount, v.ToAccount, v.Amount)
+			_ = transactionProcessor.Transfer(v.FromAccount, v.ToAccount, v.Amount)
+			logger.Info(transactionProcessor.BalancesSnapshotStdString())
 		default:
 			logger.Errorf("unrecognized event message")
 		}

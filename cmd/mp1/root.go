@@ -1,15 +1,19 @@
 package mp1
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
 
-	"github.com/bamboovir/cs425/cmd/mp1/client"
-	"github.com/bamboovir/cs425/cmd/mp1/server"
+	"github.com/bamboovir/cs425/lib/mp1/config"
+	"github.com/bamboovir/cs425/lib/mp1/multicast"
+	"github.com/bamboovir/cs425/lib/mp1/transaction"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
+)
+
+var (
+	logger = log.WithField("src", "main")
 )
 
 func ParsePort(portRawStr string) (port int, err error) {
@@ -18,6 +22,13 @@ func ParsePort(portRawStr string) (port int, err error) {
 		return -1, fmt.Errorf("port should be positive number, received %s", portRawStr)
 	}
 	return port, nil
+}
+
+func ExitWrapper(err error) {
+	if err != nil {
+		logger.Errorf("err: %v", err)
+		os.Exit(1)
+	}
 }
 
 func NewRootCMD() *cobra.Command {
@@ -30,19 +41,30 @@ func NewRootCMD() *cobra.Command {
 			nodeID := args[0]
 			port := args[1]
 			configPath := args[2]
-			errG, _ := errgroup.WithContext(context.Background())
-			errG.Go(
-				func() error {
-					return server.RunServer(nodeID, port)
-				},
-			)
 
-			go client.RunClients(nodeID, port, configPath)
+			nodesConfig, err := config.ConfigParser(configPath)
+			ExitWrapper(err)
 
-			err := errG.Wait()
-			if err != nil {
-				os.Exit(1)
-			}
+			nodesConfig.ConfigItems = append(nodesConfig.ConfigItems, config.ConfigItem{
+				NodeID:   nodeID,
+				NodeHost: multicast.CONN_HOST,
+				NodePort: port,
+			})
+
+			group, err := multicast.NewGroup(nodeID, port, *nodesConfig)
+			ExitWrapper(err)
+
+			transactionEventEmitter := transaction.TransactionEventListenerPipeline(os.Stdin)
+
+			go func() {
+				for msg := range transactionEventEmitter {
+					group.BMulticast(msg)
+				}
+			}()
+
+			err = group.Wait()
+			ExitWrapper(err)
+
 		},
 	}
 

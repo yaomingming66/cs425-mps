@@ -1,66 +1,100 @@
 package multicast
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
 	"time"
 
-	"bufio"
-	"encoding/json"
-
 	"github.com/bamboovir/cs425/lib/mp1/config"
-	"github.com/bamboovir/cs425/lib/mp1/types"
-	"github.com/bamboovir/cs425/lib/retry"
 	log "github.com/sirupsen/logrus"
 
 	"context"
 
-	"github.com/bamboovir/cs425/lib/mp1/transaction"
 	"golang.org/x/sync/errgroup"
-)
-
-const (
-	CONN_HOST = "0.0.0.0"
-	CONN_TYPE = "tcp"
 )
 
 var (
 	logger = log.WithField("src", "multicast")
 )
 
-type Group struct {
-	SelfNodeID   string
-	SelfNodePort string
-	Emitters     map[string]chan []byte
-	EmitterLock  *sync.Mutex
-	ErrGroup     *errgroup.Group
+type Emitter struct {
+	Channel chan Msg
+	Quit    chan struct{}
 }
 
-func NewGroup(selfNodeID string, selfNodePort string, configs config.Config) (group *Group, err error) {
-	errGroup, _ := errgroup.WithContext(context.Background())
+type Msg struct {
+	SrcID string `json:"src"`
+	Body  []byte `json:"body"`
+}
+
+func EncodeMsg(msg *Msg) (data []byte, err error) {
+	data, err = json.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func DecodeMsg(data []byte) (msg *Msg, err error) {
+	msg = &Msg{}
+	err = json.Unmarshal(data, msg)
+	if err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+type Group struct {
+	SelfNodeID      string
+	SelfNodePort    string
+	Emitters        map[string]Emitter
+	EmittersLock    *sync.Mutex
+	ErrGroup        *errgroup.Group
+	BDeliverChannel chan Msg
+	RDeliverChannel chan Msg
+	Received        map[string]struct{}
+	ReceivedLock    *sync.Mutex
+}
+
+func NewGroup(ctx context.Context, selfNodeID string, selfNodePort string, configs config.Config) (group *Group, err error) {
+	bDeliverChannel := make(chan Msg, 1000)
+	rDeliverChannel := make(chan Msg, 1000)
+
+	errGroup, _ := errgroup.WithContext(ctx)
 	errGroup.Go(
 		func() error {
-			return RunServer(selfNodeID, selfNodePort)
+			return RunServer(selfNodeID, selfNodePort, bDeliverChannel)
 		},
 	)
 
-	emitters := map[string]chan []byte{}
+	emitters := map[string]Emitter{}
 	emittersLock := &sync.Mutex{}
 
 	group = &Group{
-		SelfNodeID:   selfNodeID,
-		SelfNodePort: selfNodePort,
-		Emitters:     emitters,
-		EmitterLock:  emittersLock,
-		ErrGroup:     errGroup,
+		SelfNodeID:      selfNodeID,
+		SelfNodePort:    selfNodePort,
+		Emitters:        emitters,
+		EmittersLock:    emittersLock,
+		ErrGroup:        errGroup,
+		BDeliverChannel: bDeliverChannel,
+		RDeliverChannel: rDeliverChannel,
+		Received:        map[string]struct{}{},
+		ReceivedLock:    &sync.Mutex{},
 	}
 
 	for _, c := range configs.ConfigItems {
 		addr := net.JoinHostPort(c.NodeHost, c.NodePort)
-		emitter := make(chan []byte, 1000)
+
+		emitter := Emitter{
+			Channel: make(chan Msg, 1000),
+			Quit:    make(chan struct{}),
+		}
+
 		emitters[c.NodeID] = emitter
-		go group.RunClient(c.NodeID, addr, emitter)
+
+		go group.RegisterEmitter(c.NodeID, addr, emitter, 5*time.Second)
 	}
 
 	return group, nil
@@ -70,141 +104,78 @@ func (g *Group) Wait() (err error) {
 	return g.ErrGroup.Wait()
 }
 
-func (g *Group) Unicast(dstNodeID string, msg []byte) (err error) {
-	emitter, ok := g.Emitters[dstNodeID]
+func (g *Group) Unicast(dstID string, msg []byte) (err error) {
+	g.EmittersLock.Lock()
+	defer g.EmittersLock.Unlock()
+
+	emitter, ok := g.Emitters[dstID]
 	if !ok {
 		errmsg := fmt.Sprintf("dst node id [%s] emitter not exists", err)
 		return fmt.Errorf(errmsg)
 	}
-	emitter <- msg
+	select {
+	case <-emitter.Quit:
+		return
+	case emitter.Channel <- Msg{
+		SrcID: g.SelfNodeID,
+		Body:  msg,
+	}:
+	}
 	return nil
 }
 
 func (g *Group) BMulticast(msg []byte) {
-	g.EmitterLock.Lock()
-	defer g.EmitterLock.Unlock()
+	g.EmittersLock.Lock()
+	defer g.EmittersLock.Unlock()
 	for _, emitter := range g.Emitters {
-		emitter <- msg
+		select {
+		case <-emitter.Quit:
+			continue
+		case emitter.Channel <- Msg{
+			SrcID: g.SelfNodeID,
+			Body:  msg,
+		}:
+		}
 	}
+}
+
+func (g *Group) BDeliver() chan Msg {
+	return g.BDeliverChannel
 }
 
 func (g *Group) RMulticast(msg []byte) {
-
+	g.BMulticast(msg)
 }
 
-func (g *Group) RunClient(dstNodeID string, addr string, in chan []byte) (err error) {
-	var client net.Conn
-	err = retry.Retry(0, time.Second*5, func() error {
-		logger.Infof("node [%s] tries to connect to the server [%s] in [%s]", g.SelfNodeID, dstNodeID, addr)
-		client, err = net.DialTimeout("tcp", addr, time.Second*10)
-		if err != nil {
-			logger.Errorf("node [%s] failed to connect to the server [%s] in [%s], retry", g.SelfNodeID, dstNodeID, addr)
-			return err
+func (g *Group) RDeliver() chan Msg {
+	return g.RDeliverChannel
+}
+
+func (g *Group) RegisterRDeliver() {
+	go func() {
+		for msg := range g.BDeliverChannel {
+			g.ReceivedLock.Lock()
+			_, ok := g.Received[string(msg.Body)]
+			if !ok {
+				g.Received[string(msg.Body)] = struct{}{}
+				if msg.SrcID != g.SelfNodeID {
+					g.BMulticast(msg.Body)
+				}
+				g.RDeliverChannel <- msg
+			}
+			g.ReceivedLock.Unlock()
 		}
-		return nil
-	})
-
-	if err != nil {
-		return err
-	}
-
-	logger.Infof("node [%s] success connect to the server [%s] in [%s]", g.SelfNodeID, dstNodeID, addr)
-	defer client.Close()
-	defer func() {
-		g.EmitterLock.Lock()
-		defer g.EmitterLock.Unlock()
-		delete(g.Emitters, dstNodeID)
-		close(in)
 	}()
-
-	hi, _ := types.NewHi(g.SelfNodeID).Encode()
-	hi = append(hi, '\n')
-	_, err = client.Write(hi)
-	if err != nil {
-		logger.Errorf("client write error: %v", err)
-	}
-
-	for msg := range in {
-		msg := append(msg, '\n')
-		_, err := client.Write(msg)
-		if err != nil {
-			errmsg := fmt.Sprintf("client write error: %v", err)
-			logger.Error(errmsg)
-			return fmt.Errorf(errmsg)
-		}
-	}
-
-	return nil
 }
 
-var (
-	transactionProcessor = transaction.NewTransactionProcessor()
-)
-
-func RunServer(nodeID string, port string) (err error) {
-	addr := net.JoinHostPort(CONN_HOST, port)
-	socket, err := net.Listen(CONN_TYPE, addr)
-
+func (g *Group) RegisterEmitter(dstNodeID string, addr string, emitter Emitter, retryInterval time.Duration) (err error) {
+	err = RunClient(g.SelfNodeID, dstNodeID, addr, emitter.Channel, emitter.Quit, retryInterval)
+	logger.Infof("eject node [%s] from group", dstNodeID)
+	g.EmittersLock.Lock()
+	defer g.EmittersLock.Unlock()
+	delete(g.Emitters, dstNodeID)
 	if err != nil {
-		logger.Errorf("node [%s] error listening: %v", nodeID, err)
 		return err
 	}
-
-	defer socket.Close()
-	logger.Infof("node [%s] success listening on: %s", nodeID, addr)
-	for {
-		conn, err := socket.Accept()
-		if err != nil {
-			logger.Errorf("node [%s] error accepting: %v", nodeID, err)
-			continue
-		}
-
-		go handleConn(conn)
-	}
-}
-
-func handleConn(conn net.Conn) {
-	defer conn.Close()
-
-	scanner := bufio.NewScanner(conn)
-	hi := &types.Hi{}
-	if scanner.Scan() {
-		firstLine := scanner.Text()
-		err := json.Unmarshal([]byte(firstLine), hi)
-		if err != nil || hi.From == "" {
-			logger.Errorf("unrecognized event message, except hi")
-			return
-		}
-		logger.Infof("node [%s] connected", hi.From)
-	}
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		msg, err := types.DecodePolymorphicMessage([]byte(line))
-		if err != nil {
-			logger.Errorf("decode message failed: %v", err)
-			continue
-		}
-
-		switch v := msg.(type) {
-		case *types.Deposit:
-			logger.Infof("deposit: %s %d", v.Account, v.Amount)
-			_ = transactionProcessor.Deposit(v.Account, v.Amount)
-			logger.Info(transactionProcessor.BalancesSnapshotStdString())
-		case *types.Transfer:
-			logger.Infof("tranfer: %s -> %s %d", v.FromAccount, v.ToAccount, v.Amount)
-			_ = transactionProcessor.Transfer(v.FromAccount, v.ToAccount, v.Amount)
-			logger.Info(transactionProcessor.BalancesSnapshotStdString())
-		default:
-			logger.Errorf("unrecognized event message")
-		}
-	}
-
-	err := scanner.Err()
-
-	if err != nil {
-		logger.Errorf("node [%s] connection err: %v", hi.From, err)
-	} else {
-		logger.Infof("node [%s] connection reach EOF", hi.From)
-	}
+	return nil
 }

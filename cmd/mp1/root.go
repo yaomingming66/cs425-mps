@@ -1,6 +1,7 @@
 package mp1
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -51,14 +52,23 @@ func NewRootCMD() *cobra.Command {
 				NodePort: port,
 			})
 
-			group, err := multicast.NewGroup(nodeID, port, *nodesConfig)
+			group, err := multicast.NewGroup(context.Background(), nodeID, port, *nodesConfig)
 			ExitWrapper(err)
 
 			transactionEventEmitter := transaction.TransactionEventListenerPipeline(os.Stdin)
 
+			group.RegisterRDeliver()
+
 			go func() {
 				for msg := range transactionEventEmitter {
-					group.BMulticast(msg)
+					group.RMulticast(msg)
+				}
+			}()
+
+			rDeliverChannel := group.RDeliver()
+			go func() {
+				for msg := range rDeliverChannel {
+					logger.Infof("%s -> %s", msg.SrcID, string(msg.Body))
 				}
 			}()
 

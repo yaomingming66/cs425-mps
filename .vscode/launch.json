@@ -25,13 +25,25 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/cli/mp1/node",
+            "buildFlags": "-race",
+            "internalConsoleOptions": "openOnSessionStart",
+            "externalConsole": true,
             "env": {},
             "cwd": "${workspaceFolder}",
             "args": [
-                "A",
-                "8080",
-                "./lib/mp1/config/2/config_a.txt"
+                "C",
+                "8082",
+                "./lib/mp1/config/3/config_c.txt"
             ]
+        },
+        {
+            "name": "mp1 server",
+            "type": "go",
+            "request": "attach",
+            "mode": "remote",
+            "remotePath": "${workspaceFolder}",
+            "port": 2345,
+            "host": "127.0.0.1"
         }
     ]
 }

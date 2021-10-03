@@ -100,7 +100,7 @@ func (g *Group) RegisterBMulticast() {
 
 		emitter := Emitter{
 			Channel: make(chan Msg, 1000),
-			Quit:    make(chan struct{}),
+			Quit:    make(chan struct{}, 1),
 		}
 
 		g.Emitters[m.ID] = emitter

@@ -3,6 +3,7 @@ package mp1
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 
@@ -17,6 +18,10 @@ var (
 	logger = log.WithField("src", "main")
 )
 
+const (
+	CONN_HOST = "0.0.0.0"
+)
+
 func ParsePort(portRawStr string) (port int, err error) {
 	port, err = strconv.Atoi(portRawStr)
 	if err != nil || (err == nil && port < 0) {
@@ -27,9 +32,55 @@ func ParsePort(portRawStr string) (port int, err error) {
 
 func ExitWrapper(err error) {
 	if err != nil {
-		logger.Errorf("err: %v", err)
+		logger.Errorf("command err: %v", err)
 		os.Exit(1)
 	}
+}
+
+func ConstructGroup(nodeID string, nodePort string, configPath string) (group *multicast.Group, err error) {
+	nodesConfig, err := config.ConfigParser(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	members := make([]multicast.Node, 0)
+	for _, configItem := range nodesConfig.ConfigItems {
+		addr := net.JoinHostPort(configItem.NodeHost, configItem.NodePort)
+		members = append(members, multicast.Node{
+			ID:   configItem.NodeID,
+			Addr: addr,
+		})
+	}
+
+	addr := net.JoinHostPort(CONN_HOST, nodePort)
+	group = multicast.NewGroupBuilder().
+		WithSelfNodeID(nodeID).
+		WithSelfNodeAddr(addr).
+		WithMembers(members).
+		AddMember(nodeID, addr).
+		Build()
+	return group, nil
+}
+
+func RootCMDMain(nodeID string, nodePort string, configPath string) (err error) {
+	group, err := ConstructGroup(nodeID, nodePort, configPath)
+	if err != nil {
+		return err
+	}
+	err = group.Start(context.Background())
+
+	transactionEventEmitter := transaction.TransactionEventListenerPipeline(os.Stdin)
+
+	go func() {
+		for msg := range transactionEventEmitter {
+			group.RMulticast(msg)
+		}
+	}()
+
+	rDeliverChannel := group.RDeliver()
+	transactionProcessor := transaction.NewTransactionProcessor()
+	go transactionProcessor.Process(rDeliverChannel)
+	select {}
 }
 
 func NewRootCMD() *cobra.Command {
@@ -40,41 +91,11 @@ func NewRootCMD() *cobra.Command {
 		Args:  cobra.ExactArgs(3),
 		Run: func(cmd *cobra.Command, args []string) {
 			nodeID := args[0]
-			port := args[1]
+			nodePort := args[1]
 			configPath := args[2]
 
-			nodesConfig, err := config.ConfigParser(configPath)
+			err := RootCMDMain(nodeID, nodePort, configPath)
 			ExitWrapper(err)
-
-			nodesConfig.ConfigItems = append(nodesConfig.ConfigItems, config.ConfigItem{
-				NodeID:   nodeID,
-				NodeHost: multicast.CONN_HOST,
-				NodePort: port,
-			})
-
-			group, err := multicast.NewGroup(context.Background(), nodeID, port, *nodesConfig)
-			ExitWrapper(err)
-
-			transactionEventEmitter := transaction.TransactionEventListenerPipeline(os.Stdin)
-
-			group.RegisterRDeliver()
-
-			go func() {
-				for msg := range transactionEventEmitter {
-					group.RMulticast(msg)
-				}
-			}()
-
-			rDeliverChannel := group.RDeliver()
-			go func() {
-				for msg := range rDeliverChannel {
-					logger.Infof("%s -> %s", msg.SrcID, string(msg.Body))
-				}
-			}()
-
-			err = group.Wait()
-			ExitWrapper(err)
-
 		},
 	}
 

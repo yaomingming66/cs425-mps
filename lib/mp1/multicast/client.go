@@ -9,7 +9,7 @@ import (
 	"github.com/bamboovir/cs425/lib/retry"
 )
 
-func RunClient(srcID string, dstID string, addr string, in <-chan Msg, quit chan struct{}, retryInterval time.Duration) (err error) {
+func (g *Group) RunClient(srcID string, dstID string, addr string, in <-chan Msg, quit chan struct{}, retryInterval time.Duration) (err error) {
 	var client net.Conn
 	err = retry.Retry(0, retryInterval, func() error {
 		logger.Infof("node [%s] tries to connect to the server [%s] in [%s]", srcID, dstID, addr)
@@ -20,6 +20,8 @@ func RunClient(srcID string, dstID string, addr string, in <-chan Msg, quit chan
 		}
 		return nil
 	})
+
+	g.StartSyncWaitGroup.Done()
 
 	if err != nil {
 		return err

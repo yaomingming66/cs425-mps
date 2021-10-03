@@ -1,17 +1,15 @@
 package multicast
 
 import (
-	"encoding/json"
 	"fmt"
-	"net"
 	"sync"
 	"time"
 
-	"github.com/bamboovir/cs425/lib/mp1/config"
 	log "github.com/sirupsen/logrus"
 
 	"context"
 
+	"github.com/bamboovir/cs425/lib/mp1/broker"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -24,84 +22,59 @@ type Emitter struct {
 	Quit    chan struct{}
 }
 
-type Msg struct {
-	SrcID string `json:"src"`
-	Body  []byte `json:"body"`
-}
-
-func EncodeMsg(msg *Msg) (data []byte, err error) {
-	data, err = json.Marshal(msg)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func DecodeMsg(data []byte) (msg *Msg, err error) {
-	msg = &Msg{}
-	err = json.Unmarshal(data, msg)
-	if err != nil {
-		return nil, err
-	}
-	return msg, nil
+type Node struct {
+	ID   string
+	Addr string
 }
 
 type Group struct {
-	SelfNodeID      string
-	SelfNodePort    string
-	Emitters        map[string]Emitter
-	EmittersLock    *sync.Mutex
-	ErrGroup        *errgroup.Group
-	BDeliverChannel chan Msg
-	RDeliverChannel chan Msg
-	Received        map[string]struct{}
-	ReceivedLock    *sync.Mutex
+	Members            []Node
+	SelfNodeID         string
+	SelfNodeAddr       string
+	Emitters           map[string]Emitter
+	EmittersLock       *sync.Mutex
+	BDeliverBroker     *broker.Broker
+	RDeliverBroker     *broker.Broker
+	Received           map[string]struct{}
+	ReceivedLock       *sync.Mutex
+	StartSyncWaitGroup *sync.WaitGroup
 }
 
-func NewGroup(ctx context.Context, selfNodeID string, selfNodePort string, configs config.Config) (group *Group, err error) {
-	bDeliverChannel := make(chan Msg, 1000)
-	rDeliverChannel := make(chan Msg, 1000)
+func (g *Group) Start(ctx context.Context) (err error) {
+	go g.BDeliverBroker.Start()
+	go g.RDeliverBroker.Start()
 
 	errGroup, _ := errgroup.WithContext(ctx)
 	errGroup.Go(
 		func() error {
-			return RunServer(selfNodeID, selfNodePort, bDeliverChannel)
+			return g.RegisterBDeliver()
 		},
 	)
+	g.RegisterBMulticast()
 
-	emitters := map[string]Emitter{}
-	emittersLock := &sync.Mutex{}
+	go g.RegisterRDeliver()
+	g.RegisterRMulticast()
 
-	group = &Group{
-		SelfNodeID:      selfNodeID,
-		SelfNodePort:    selfNodePort,
-		Emitters:        emitters,
-		EmittersLock:    emittersLock,
-		ErrGroup:        errGroup,
-		BDeliverChannel: bDeliverChannel,
-		RDeliverChannel: rDeliverChannel,
-		Received:        map[string]struct{}{},
-		ReceivedLock:    &sync.Mutex{},
+	serverChan := make(chan error)
+	clientChan := make(chan struct{})
+
+	go func() {
+		g.StartSyncWaitGroup.Wait()
+		clientChan <- struct{}{}
+	}()
+
+	go func() {
+		err := errGroup.Wait()
+		serverChan <- err
+	}()
+
+	select {
+	case err := <-serverChan:
+		return err
+	case <-clientChan:
 	}
 
-	for _, c := range configs.ConfigItems {
-		addr := net.JoinHostPort(c.NodeHost, c.NodePort)
-
-		emitter := Emitter{
-			Channel: make(chan Msg, 1000),
-			Quit:    make(chan struct{}),
-		}
-
-		emitters[c.NodeID] = emitter
-
-		go group.RegisterEmitter(c.NodeID, addr, emitter, 5*time.Second)
-	}
-
-	return group, nil
-}
-
-func (g *Group) Wait() (err error) {
-	return g.ErrGroup.Wait()
+	return nil
 }
 
 func (g *Group) Unicast(dstID string, msg []byte) (err error) {
@@ -110,66 +83,104 @@ func (g *Group) Unicast(dstID string, msg []byte) (err error) {
 
 	emitter, ok := g.Emitters[dstID]
 	if !ok {
-		errmsg := fmt.Sprintf("dst node id [%s] emitter not exists", err)
+		errmsg := fmt.Sprintf("dst node id [%s] emitter not exists", dstID)
 		return fmt.Errorf(errmsg)
 	}
-	select {
-	case <-emitter.Quit:
-		return
-	case emitter.Channel <- Msg{
+
+	emitter.Channel <- Msg{
 		SrcID: g.SelfNodeID,
 		Body:  msg,
-	}:
 	}
 	return nil
+}
+
+func (g *Group) RegisterBMulticast() {
+	for _, m := range g.Members {
+		g.StartSyncWaitGroup.Add(1)
+
+		emitter := Emitter{
+			Channel: make(chan Msg, 1000),
+			Quit:    make(chan struct{}),
+		}
+
+		g.Emitters[m.ID] = emitter
+
+		go g.RegisterEmitter(m.ID, m.Addr, emitter, 5*time.Second)
+	}
+
+}
+
+func (g *Group) RegisterBDeliver() (err error) {
+	return RunServer(g.SelfNodeID, g.SelfNodeAddr, g.BDeliverBroker)
 }
 
 func (g *Group) BMulticast(msg []byte) {
 	g.EmittersLock.Lock()
 	defer g.EmittersLock.Unlock()
 	for _, emitter := range g.Emitters {
-		select {
-		case <-emitter.Quit:
-			continue
-		case emitter.Channel <- Msg{
+		emitter.Channel <- Msg{
 			SrcID: g.SelfNodeID,
 			Body:  msg,
-		}:
 		}
 	}
 }
 
-func (g *Group) BDeliver() chan Msg {
-	return g.BDeliverChannel
+func (g *Group) BDeliver() chan interface{} {
+	return g.BDeliverBroker.Subscribe()
 }
 
 func (g *Group) RMulticast(msg []byte) {
-	g.BMulticast(msg)
+	rmsg := NewRMsg(msg)
+	rmsgBytes, err := EncodeRMsg(rmsg)
+	if err != nil {
+		logger.Errorf("encode r message failed: %v", err)
+		return
+	}
+	g.BMulticast(rmsgBytes)
 }
 
-func (g *Group) RDeliver() chan Msg {
-	return g.RDeliverChannel
+func (g *Group) RDeliver() chan interface{} {
+	return g.RDeliverBroker.Subscribe()
+}
+
+func (g *Group) RegisterRMulticast() {
+	// Multiplexing B multicast channel
 }
 
 func (g *Group) RegisterRDeliver() {
-	go func() {
-		for msg := range g.BDeliverChannel {
-			g.ReceivedLock.Lock()
-			_, ok := g.Received[string(msg.Body)]
-			if !ok {
-				g.Received[string(msg.Body)] = struct{}{}
-				if msg.SrcID != g.SelfNodeID {
-					g.BMulticast(msg.Body)
-				}
-				g.RDeliverChannel <- msg
-			}
-			g.ReceivedLock.Unlock()
+	bDeliverChannel := g.BDeliver()
+	for msg := range bDeliverChannel {
+		msg := msg.(Msg)
+		rmsg, err := DecodeRMsg(msg.Body)
+		if err != nil {
+			logger.Errorf("decode r message failed: %v", err)
+			continue
 		}
-	}()
+		g.ReceivedLock.Lock()
+		_, ok := g.Received[rmsg.ID]
+		if !ok {
+			g.Received[rmsg.ID] = struct{}{}
+			if msg.SrcID != g.SelfNodeID {
+				rmsgCopy := &RMsg{
+					ID:   rmsg.ID,
+					Body: rmsg.Body,
+				}
+				rmsgBytes, err := EncodeRMsg(rmsgCopy)
+				if err != nil {
+					logger.Errorf("encode r message failed: %v", err)
+					return
+				}
+				g.BMulticast(rmsgBytes)
+			}
+
+			g.RDeliverBroker.Publish(rmsg.Body)
+		}
+		g.ReceivedLock.Unlock()
+	}
 }
 
 func (g *Group) RegisterEmitter(dstNodeID string, addr string, emitter Emitter, retryInterval time.Duration) (err error) {
-	err = RunClient(g.SelfNodeID, dstNodeID, addr, emitter.Channel, emitter.Quit, retryInterval)
+	err = g.RunClient(g.SelfNodeID, dstNodeID, addr, emitter.Channel, emitter.Quit, retryInterval)
 	logger.Infof("eject node [%s] from group", dstNodeID)
 	g.EmittersLock.Lock()
 	defer g.EmittersLock.Unlock()
@@ -178,4 +189,8 @@ func (g *Group) RegisterEmitter(dstNodeID string, addr string, emitter Emitter, 
 		return err
 	}
 	return nil
+}
+
+// TODO
+func (g *Group) TOMulticast() {
 }

@@ -16,5 +16,5 @@ fi
 
 # GOOS=linux GOARCH="amd64"
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
-go build -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp1" "${PROJECT_ROOT}/cli/mp1/node"
+go build -race -tags "" -mod=vendor -o "${PROJECT_ROOT}/bin/mp1" "${PROJECT_ROOT}/cli/mp1/node"
 

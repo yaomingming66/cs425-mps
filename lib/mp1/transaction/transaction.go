@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/bamboovir/cs425/lib/mp1/types"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -87,4 +88,27 @@ func (t *TransactionProcessor) BalancesSnapshotStdString() string {
 	}
 
 	return builder.String()
+}
+
+func (t *TransactionProcessor) Process(in chan interface{}) {
+	for msg := range in {
+		msg := msg.([]byte)
+		pmsg, err := types.DecodePolymorphicMessage(msg)
+		if err != nil {
+			logger.Errorf("decode message [%s] failed: %v", string(msg), err)
+			continue
+		}
+		switch v := pmsg.(type) {
+		case *types.Deposit:
+			logger.Infof("deposit: %s %d", v.Account, v.Amount)
+			_ = t.Deposit(v.Account, v.Amount)
+			logger.Info(t.BalancesSnapshotStdString())
+		case *types.Transfer:
+			logger.Infof("tranfer: %s -> %s %d", v.FromAccount, v.ToAccount, v.Amount)
+			_ = t.Transfer(v.FromAccount, v.ToAccount, v.Amount)
+			logger.Info(t.BalancesSnapshotStdString())
+		default:
+			logger.Errorf("unrecognized event message")
+		}
+	}
 }

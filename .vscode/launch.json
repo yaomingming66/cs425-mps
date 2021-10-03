@@ -18,6 +18,20 @@
             "program": "${workspaceFolder}/cli/mp0/client",
             "env": {},
             "args": []
+        },
+        {
+            "name": "mp1",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cli/mp1/node",
+            "env": {},
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "A",
+                "8080",
+                "./lib/mp1/config/2/config_a.txt"
+            ]
         }
     ]
 }

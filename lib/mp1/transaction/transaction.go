@@ -3,9 +3,10 @@ package transaction
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 
-	"github.com/bamboovir/cs425/lib/mp1/types"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -13,17 +14,22 @@ var (
 	logger = log.WithField("src", "transaction")
 )
 
-type TransactionProcessor struct {
-	balances map[string]int
+type Transaction struct {
+	balances     map[string]int
+	balancesLock *sync.Mutex
 }
 
-func NewTransactionProcessor() *TransactionProcessor {
-	return &TransactionProcessor{
-		balances: map[string]int{},
+func NewTransaction() *Transaction {
+	return &Transaction{
+		balances:     map[string]int{},
+		balancesLock: &sync.Mutex{},
 	}
 }
 
-func (t *TransactionProcessor) Deposit(account string, amount int) (err error) {
+func (t *Transaction) Deposit(account string, amount int) (err error) {
+	t.balancesLock.Lock()
+	defer t.balancesLock.Unlock()
+
 	if amount < 0 {
 		logger.Errorf("amount should be a integer greater or equal to zero")
 		return errors.New("amount should be a integer greater or equal to zero")
@@ -40,7 +46,10 @@ func (t *TransactionProcessor) Deposit(account string, amount int) (err error) {
 	return nil
 }
 
-func (t *TransactionProcessor) Transfer(fromAccount string, toAccount string, amount int) (err error) {
+func (t *Transaction) Transfer(fromAccount string, toAccount string, amount int) (err error) {
+	t.balancesLock.Lock()
+	defer t.balancesLock.Unlock()
+
 	if amount < 0 {
 		logger.Errorf("amount should be a integer greater or equal to zero")
 		return errors.New("amount should be a integer greater or equal to zero")
@@ -71,7 +80,9 @@ func (t *TransactionProcessor) Transfer(fromAccount string, toAccount string, am
 	return nil
 }
 
-func (t *TransactionProcessor) BalancesSnapshot() map[string]int {
+func (t *Transaction) BalancesSnapshot() map[string]int {
+	t.balancesLock.Lock()
+	defer t.balancesLock.Unlock()
 	balancesSnapshot := map[string]int{}
 	for account, amount := range t.balances {
 		balancesSnapshot[account] = amount
@@ -79,7 +90,7 @@ func (t *TransactionProcessor) BalancesSnapshot() map[string]int {
 	return balancesSnapshot
 }
 
-func (t *TransactionProcessor) BalancesSnapshotStdString() string {
+func (t *Transaction) BalancesSnapshotStdString() string {
 	builder := &strings.Builder{}
 
 	builder.WriteString("BALANCES")
@@ -90,25 +101,23 @@ func (t *TransactionProcessor) BalancesSnapshotStdString() string {
 	return builder.String()
 }
 
-func (t *TransactionProcessor) Process(in chan interface{}) {
-	for msg := range in {
-		msg := msg.([]byte)
-		pmsg, err := types.DecodePolymorphicMessage(msg)
-		if err != nil {
-			logger.Errorf("decode message [%s] failed: %v", string(msg), err)
-			continue
-		}
-		switch v := pmsg.(type) {
-		case *types.Deposit:
-			logger.Infof("deposit: %s %d", v.Account, v.Amount)
-			_ = t.Deposit(v.Account, v.Amount)
-			logger.Info(t.BalancesSnapshotStdString())
-		case *types.Transfer:
-			logger.Infof("tranfer: %s -> %s %d", v.FromAccount, v.ToAccount, v.Amount)
-			_ = t.Transfer(v.FromAccount, v.ToAccount, v.Amount)
-			logger.Info(t.BalancesSnapshotStdString())
-		default:
-			logger.Errorf("unrecognized event message")
-		}
+func (t *Transaction) BalancesSnapshotStdSortedString() string {
+	builder := &strings.Builder{}
+
+	builder.WriteString("BALANCES")
+
+	balancesSnapshot := t.BalancesSnapshot()
+	accounts := make([]string, 0)
+
+	for account := range balancesSnapshot {
+		accounts = append(accounts, account)
 	}
+
+	sort.Strings(accounts)
+
+	for _, account := range accounts {
+		builder.WriteString(fmt.Sprintf(" %s:%d", account, balancesSnapshot[account]))
+	}
+
+	return builder.String()
 }

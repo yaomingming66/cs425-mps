@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/bamboovir/cs425/lib/mp1/config"
+	"github.com/bamboovir/cs425/lib/mp1/dispatcher"
 	"github.com/bamboovir/cs425/lib/mp1/multicast"
 	"github.com/bamboovir/cs425/lib/mp1/transaction"
 	log "github.com/sirupsen/logrus"
@@ -78,8 +79,24 @@ func RootCMDMain(nodeID string, nodePort string, configPath string) (err error) 
 	}()
 
 	rDeliverChannel := group.RDeliver()
-	transactionProcessor := transaction.NewTransactionProcessor()
-	go transactionProcessor.Process(rDeliverChannel)
+	dispatcherChannel := make(chan dispatcher.Msg, 1000)
+	msgDispatcher := dispatcher.New(dispatcherChannel)
+	transactionProcessor := transaction.NewProcessor()
+	transactionProcessor.RegisteTransactionHandler(msgDispatcher)
+	go msgDispatcher.Run()
+	go func() {
+		for m := range rDeliverChannel {
+			m := m.([]byte)
+			msg := &dispatcher.Msg{}
+			_, err = msg.Decode(m)
+			if err != nil {
+				logger.Errorf("decode dispatcher message err: %v", err)
+				continue
+			}
+			dispatcherChannel <- *msg
+		}
+	}()
+
 	select {}
 }
 

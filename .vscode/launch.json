@@ -31,9 +31,9 @@
             "env": {},
             "cwd": "${workspaceFolder}",
             "args": [
-                "C",
-                "8082",
-                "./lib/mp1/config/3/config_c.txt"
+                "A",
+                "8080",
+                "./lib/mp1/config/1/config_a.txt"
             ]
         },
         {

@@ -8,9 +8,9 @@ import (
 	"strconv"
 
 	"github.com/bamboovir/cs425/lib/mp1/config"
-	"github.com/bamboovir/cs425/lib/mp1/dispatcher"
 	"github.com/bamboovir/cs425/lib/mp1/multicast"
 	"github.com/bamboovir/cs425/lib/mp1/transaction"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -20,7 +20,8 @@ var (
 )
 
 const (
-	CONN_HOST = "0.0.0.0"
+	CONN_HOST       = "0.0.0.0"
+	TransactionPath = "/transaction"
 )
 
 func ParsePort(portRawStr string) (port int, err error) {
@@ -69,34 +70,22 @@ func RootCMDMain(nodeID string, nodePort string, configPath string) (err error) 
 		return err
 	}
 	err = group.Start(context.Background())
+	if err != nil {
+		return errors.Wrap(err, "group start failed")
+	}
 
 	transactionEventEmitter := transaction.TransactionEventListenerPipeline(os.Stdin)
 
 	go func() {
 		for msg := range transactionEventEmitter {
-			group.RMulticast(msg)
+			group.RMulticast(msg.Path, msg.Body)
 		}
 	}()
 
-	rDeliverChannel := group.RDeliver()
-	dispatcherChannel := make(chan dispatcher.Msg, 1000)
-	msgDispatcher := dispatcher.New(dispatcherChannel)
+	msgDispatcher := group.RDispatcher()
 	transactionProcessor := transaction.NewProcessor()
 	transactionProcessor.RegisteTransactionHandler(msgDispatcher)
 	go msgDispatcher.Run()
-	go func() {
-		for m := range rDeliverChannel {
-			m := m.([]byte)
-			msg := &dispatcher.Msg{}
-			_, err = msg.Decode(m)
-			if err != nil {
-				logger.Errorf("decode dispatcher message err: %v", err)
-				continue
-			}
-			dispatcherChannel <- *msg
-		}
-	}()
-
 	select {}
 }
 

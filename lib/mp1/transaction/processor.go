@@ -1,6 +1,8 @@
 package transaction
 
-import "github.com/bamboovir/cs425/lib/mp1/dispatcher"
+import (
+	"github.com/bamboovir/cs425/lib/mp1/multicast"
+)
 
 type Processor struct {
 	transaction *Transaction
@@ -12,9 +14,15 @@ func NewProcessor() *Processor {
 	}
 }
 
-func (p *Processor) RegisteTransactionHandler(d *dispatcher.Dispatcher) {
-	d.Bind(DepositPath, p.processDeposit)
-	d.Bind(TransferPath, p.processTransfer)
+func rProcessWrapper(f func(msg []byte)) func(msg multicast.RMsg) {
+	return func(msg multicast.RMsg) {
+		f(msg.Body)
+	}
+}
+
+func (p *Processor) RegisteTransactionHandler(d *multicast.RDispatcher) {
+	d.Bind(DepositPath, rProcessWrapper(p.processDeposit))
+	d.Bind(TransferPath, rProcessWrapper(p.processTransfer))
 }
 
 func (p *Processor) processDeposit(msg []byte) {

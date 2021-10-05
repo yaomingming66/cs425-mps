@@ -63,8 +63,8 @@ func (t *Transaction) Transfer(fromAccount string, toAccount string, amount int)
 	}
 
 	if prevFromAccountAmount-amount < 0 {
-		logger.Infof("transfer failed, src account [%s] don't has enough funds, curr amount [%d], need amount [%d]", fromAccount, prevFromAccountAmount, amount)
-		return fmt.Errorf("transfer failed, src account [%s] don't has enough funds, curr amount [%d], need amount [%d]", fromAccount, prevFromAccountAmount, amount)
+		logger.Infof("transfer failed, src account [%s] don't has enough funds, curr amount [%d], current amount [%d]", fromAccount, prevFromAccountAmount, amount)
+		return fmt.Errorf("transfer failed, src account [%s] don't has enough funds, curr amount [%d], current amount [%d]", fromAccount, prevFromAccountAmount, amount)
 	}
 
 	t.balances[fromAccount] = prevFromAccountAmount - amount

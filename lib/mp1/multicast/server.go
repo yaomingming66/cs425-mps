@@ -11,10 +11,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// var (
-// 	transactionProcessor = transaction.NewTransactionProcessor()
-// )
-
 var (
 	serverLogger = log.WithField("src", "multicast.server")
 )
@@ -23,7 +19,7 @@ const (
 	CONN_TYPE = "tcp"
 )
 
-func RunServer(nodeID string, addr string, out *broker.Broker) (err error) {
+func runServer(nodeID string, addr string, out *broker.Broker) (err error) {
 	socket, err := net.Listen(CONN_TYPE, addr)
 
 	if err != nil {
@@ -61,13 +57,7 @@ func handleConn(conn net.Conn, out *broker.Broker) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		msg, err := DecodeMsg([]byte(line))
-		if err != nil {
-			serverLogger.Errorf("decode message failed: %v", err)
-			continue
-		}
-
-		out.Publish(*msg)
+		out.Publish([]byte(line))
 	}
 
 	err := scanner.Err()

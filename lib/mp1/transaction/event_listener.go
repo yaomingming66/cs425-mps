@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/bamboovir/cs425/lib/mp1/dispatcher"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -12,8 +13,8 @@ var (
 	transactionEventListenerLogger = log.WithField("src", "event_listener")
 )
 
-func TransactionEventListenerPipeline(reader io.Reader) <-chan []byte {
-	out := make(chan []byte, 1000)
+func TransactionEventListenerPipeline(reader io.Reader) <-chan dispatcher.Msg {
+	out := make(chan dispatcher.Msg, 1)
 
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
@@ -24,7 +25,7 @@ func TransactionEventListenerPipeline(reader io.Reader) <-chan []byte {
 				transactionEventListenerLogger.Errorf("encode input msg failed with err :%v, skip", err)
 				continue
 			}
-			out <- eventMsg
+			out <- *eventMsg
 		}
 
 		err := scanner.Err()

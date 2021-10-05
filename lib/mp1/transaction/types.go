@@ -64,7 +64,7 @@ const (
 	TransferPath       = "/transaction/transfer"
 )
 
-func EncodeTransactionsMsg(msg string) (encoded []byte, err error) {
+func EncodeTransactionsMsg(msg string) (dmsg *dispatcher.Msg, err error) {
 	fields := strings.Fields(msg)
 	if len(fields) == 0 {
 		errMsg := "invalid event format, empty fields"
@@ -95,8 +95,7 @@ func EncodeTransactionsMsg(msg string) (encoded []byte, err error) {
 			return nil, err
 		}
 
-		encoded, err := dmsg.Encode()
-		return encoded, nil
+		return dmsg, nil
 	case TransferEvent:
 		if len(fields) != 5 {
 			errMsg := "invalid transfer event format"
@@ -119,13 +118,7 @@ func EncodeTransactionsMsg(msg string) (encoded []byte, err error) {
 			return nil, err
 		}
 
-		encoded, err := dmsg.Encode()
-
-		if err != nil {
-			return nil, err
-		}
-
-		return encoded, nil
+		return dmsg, nil
 	default:
 		errMsg := "unrecognized event type"
 		return nil, fmt.Errorf(errMsg)

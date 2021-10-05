@@ -6,54 +6,68 @@ import (
 	"github.com/google/uuid"
 )
 
-type Msg struct {
+type BMsg struct {
 	SrcID string `json:"src"`
+	Path  string `json:"path"`
 	Body  []byte `json:"body"`
 }
 
-func EncodeMsg(msg *Msg) (data []byte, err error) {
-	data, err = json.Marshal(msg)
+func NewBMsg(srcID string, path string, v interface{}) (msg *BMsg, err error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BMsg{
+		SrcID: srcID,
+		Path:  path,
+		Body:  data,
+	}, nil
+}
+
+func (m *BMsg) Encode() (data []byte, err error) {
+	data, err = json.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
 	return data, nil
 }
 
-func DecodeMsg(data []byte) (msg *Msg, err error) {
-	msg = &Msg{}
-	err = json.Unmarshal(data, msg)
+func (m *BMsg) Decode(data []byte) (msg *BMsg, err error) {
+	err = json.Unmarshal(data, m)
 	if err != nil {
 		return nil, err
 	}
-	return msg, nil
+	return m, nil
 }
 
 type RMsg struct {
 	ID   string `json:"id"`
+	Path string `json:"path"`
 	Body []byte `json:"body"`
 }
 
-func NewRMsg(body []byte) *RMsg {
+func NewRMsg(path string, body []byte) *RMsg {
 	id := uuid.New().String()
 	return &RMsg{
 		ID:   id,
+		Path: path,
 		Body: body,
 	}
 }
 
-func EncodeRMsg(msg *RMsg) (data []byte, err error) {
-	data, err = json.Marshal(msg)
+func (m *RMsg) Encode() (data []byte, err error) {
+	data, err = json.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
 	return data, nil
 }
 
-func DecodeRMsg(data []byte) (msg *RMsg, err error) {
-	msg = &RMsg{}
-	err = json.Unmarshal(data, msg)
+func (m *RMsg) Decode(data []byte) (msg *RMsg, err error) {
+	err = json.Unmarshal(data, m)
 	if err != nil {
 		return nil, err
 	}
-	return msg, nil
+	return m, nil
 }

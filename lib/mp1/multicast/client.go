@@ -9,7 +9,7 @@ import (
 	"github.com/bamboovir/cs425/lib/retry"
 )
 
-func (g *Group) RunClient(srcID string, dstID string, addr string, in <-chan Msg, quit chan struct{}, retryInterval time.Duration) (err error) {
+func (g *Group) runClient(srcID string, dstID string, addr string, in <-chan []byte, retryInterval time.Duration) (err error) {
 	var client net.Conn
 	err = retry.Retry(0, retryInterval, func() error {
 		logger.Infof("node [%s] tries to connect to the server [%s] in [%s]", srcID, dstID, addr)
@@ -21,7 +21,7 @@ func (g *Group) RunClient(srcID string, dstID string, addr string, in <-chan Msg
 		return nil
 	})
 
-	g.StartSyncWaitGroup.Done()
+	g.startSyncWaitGroup.Done()
 
 	if err != nil {
 		return err
@@ -36,25 +36,20 @@ func (g *Group) RunClient(srcID string, dstID string, addr string, in <-chan Msg
 	if err != nil {
 		errmsg := fmt.Sprintf("client lost connection, write handshake message error: %v", err)
 		logger.Error(errmsg)
-		quit <- struct{}{}
 		return fmt.Errorf(errmsg)
 	}
 
 	for msg := range in {
-		msgBytes, err := EncodeMsg(&msg)
-		if err != nil {
-			logger.Error("encode message failed")
-		}
-		msg := append(msgBytes, '\n')
-		_, err = client.Write(msg)
+		msgCopy := make([]byte, len(msg))
+		copy(msgCopy, msg)
+		msgCopy = append(msgCopy, '\n')
+		_, err = client.Write(msgCopy)
 		if err != nil {
 			errmsg := fmt.Sprintf("client lost connection, write error: %v", err)
 			logger.Error(errmsg)
-			quit <- struct{}{}
 			return fmt.Errorf(errmsg)
 		}
 	}
 
-	quit <- struct{}{}
 	return nil
 }

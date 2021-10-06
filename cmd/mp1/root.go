@@ -10,7 +10,6 @@ import (
 	"github.com/bamboovir/cs425/lib/mp1/config"
 	"github.com/bamboovir/cs425/lib/mp1/multicast"
 	"github.com/bamboovir/cs425/lib/mp1/transaction"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -20,8 +19,7 @@ var (
 )
 
 const (
-	CONN_HOST       = "0.0.0.0"
-	TransactionPath = "/transaction"
+	CONN_HOST = "0.0.0.0"
 )
 
 func ParsePort(portRawStr string) (port int, err error) {
@@ -69,23 +67,27 @@ func RootCMDMain(nodeID string, nodePort string, configPath string) (err error) 
 	if err != nil {
 		return err
 	}
-	err = group.Start(context.Background())
-	if err != nil {
-		return errors.Wrap(err, "group start failed")
-	}
+	go group.Start(context.Background())
+	// if err != nil {
+	// 	return errors.Wrap(err, "group start failed")
+	// }
+
+	router := group.TO().Router()
+	transactionProcessor := transaction.NewProcessor()
+	transactionProcessor.RegisteTransactionHandler(router)
+	go router.Run()
 
 	transactionEventEmitter := transaction.TransactionEventListenerPipeline(os.Stdin)
 
 	go func() {
 		for msg := range transactionEventEmitter {
-			group.RMulticast(msg.Path, msg.Body)
+			err = group.TO().Multicast(msg.Path, msg.Body)
+			if err != nil {
+				logger.Errorf("%v", err)
+				continue
+			}
 		}
 	}()
-
-	msgDispatcher := group.RDispatcher()
-	transactionProcessor := transaction.NewProcessor()
-	transactionProcessor.RegisteTransactionHandler(msgDispatcher)
-	go msgDispatcher.Run()
 	select {}
 }
 

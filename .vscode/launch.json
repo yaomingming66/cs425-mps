@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+    
         {
             "name": "mp0-s",
             "type": "go",
@@ -37,12 +38,21 @@
             ]
         },
         {
-            "name": "mp1 server",
+            "name": "mp1 A",
             "type": "go",
             "request": "attach",
             "mode": "remote",
             "remotePath": "${workspaceFolder}",
             "port": 2345,
+            "host": "127.0.0.1"
+        },
+        {
+            "name": "mp1 B",
+            "type": "go",
+            "request": "attach",
+            "mode": "remote",
+            "remotePath": "${workspaceFolder}",
+            "port": 2346,
             "host": "127.0.0.1"
         }
     ]

@@ -9,7 +9,7 @@ import (
 	"github.com/bamboovir/cs425/lib/retry"
 )
 
-func (g *Group) runClient(srcID string, dstID string, addr string, in <-chan []byte, retryInterval time.Duration) (err error) {
+func (b *BMulticast) runClient(srcID string, dstID string, addr string, in <-chan []byte, retryInterval time.Duration) (err error) {
 	var client net.Conn
 	err = retry.Retry(0, retryInterval, func() error {
 		logger.Infof("node [%s] tries to connect to the server [%s] in [%s]", srcID, dstID, addr)
@@ -21,7 +21,7 @@ func (g *Group) runClient(srcID string, dstID string, addr string, in <-chan []b
 		return nil
 	})
 
-	g.startSyncWaitGroup.Done()
+	b.startSyncWaitGroup.Done()
 
 	if err != nil {
 		return err

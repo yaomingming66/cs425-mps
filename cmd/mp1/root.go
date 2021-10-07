@@ -10,6 +10,7 @@ import (
 	"github.com/bamboovir/cs425/lib/mp1/config"
 	"github.com/bamboovir/cs425/lib/mp1/multicast"
 	"github.com/bamboovir/cs425/lib/mp1/transaction"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -67,14 +68,18 @@ func RootCMDMain(nodeID string, nodePort string, configPath string) (err error) 
 	if err != nil {
 		return err
 	}
-	go group.Start(context.Background())
-	// if err != nil {
-	// 	return errors.Wrap(err, "group start failed")
-	// }
+	err = group.Start(context.Background())
 
+	if err != nil {
+		return errors.Wrap(err, "group start failed")
+	}
 	router := group.TO().Router()
 	transactionProcessor := transaction.NewProcessor()
 	transactionProcessor.RegisteTransactionHandler(router)
+
+	go group.B().Router().Run()
+	go group.R().Router().Run()
+	go group.TO().Router().Run()
 	go router.Run()
 
 	transactionEventEmitter := transaction.TransactionEventListenerPipeline(os.Stdin)

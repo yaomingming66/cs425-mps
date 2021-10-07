@@ -126,7 +126,7 @@ func (b *BMulticast) Start(ctx context.Context) (err error) {
 		},
 	)
 
-	go b.startClients()
+	b.startClients()
 
 	serverChan := make(chan error)
 	clientChan := make(chan struct{})
@@ -148,6 +148,5 @@ func (b *BMulticast) Start(ctx context.Context) (err error) {
 		return err
 	case <-clientChan:
 	}
-	b.router.Run()
 	return nil
 }

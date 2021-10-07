@@ -68,6 +68,7 @@ func NewTotalOrder(b *BMulticast, r *RMulticast) *TotalOrding {
 }
 
 func (t *TotalOrding) Start(ctx context.Context) (err error) {
+	t.bindTODeliver()
 	return t.rmulticast.Start(ctx)
 }
 
@@ -99,7 +100,7 @@ func (t *TotalOrding) Multicast(path string, msg []byte) (err error) {
 	return nil
 }
 
-func (t *TotalOrding) registerTOMulticast() {
+func (t *TotalOrding) bindTODeliver() {
 	rRouter := t.rmulticast.Router()
 	bRouter := t.bmulticast.Router()
 

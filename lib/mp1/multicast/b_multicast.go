@@ -147,6 +147,7 @@ func (b *BMulticast) Start(ctx context.Context) (err error) {
 	case err := <-serverChan:
 		return err
 	case <-clientChan:
+		time.Sleep(5 * time.Second)
 	}
 	return nil
 }

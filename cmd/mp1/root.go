@@ -79,7 +79,6 @@ func RootCMDMain(nodeID string, nodePort string, configPath string) (err error) 
 
 	go group.B().Router().Run()
 	go group.R().Router().Run()
-	go group.TO().Router().Run()
 	go router.Run()
 
 	transactionEventEmitter := transaction.TransactionEventListenerPipeline(os.Stdin)

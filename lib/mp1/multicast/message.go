@@ -1,6 +1,8 @@
 package multicast
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 
 	"github.com/google/uuid"
@@ -10,6 +12,13 @@ type BMsg struct {
 	SrcID string `json:"src"`
 	Path  string `json:"path"`
 	Body  []byte `json:"body"`
+}
+
+// SHA1 hashes using sha1 algorithm
+func SHA1(text string) string {
+	algorithm := sha1.New()
+	algorithm.Write([]byte(text))
+	return hex.EncodeToString(algorithm.Sum(nil))
 }
 
 func NewBMsg(srcID string, path string, v interface{}) (msg *BMsg, err error) {
@@ -48,7 +57,7 @@ type RMsg struct {
 }
 
 func NewRMsg(path string, body []byte) *RMsg {
-	id := uuid.New().String()
+	id := uuid.New().String() + SHA1(string(body))
 	return &RMsg{
 		ID:   id,
 		Path: path,
@@ -79,7 +88,7 @@ type TOAskProposalSeqMsg struct {
 }
 
 func NewTOAskProposalSeqMsg(srcID string, body []byte) *TOAskProposalSeqMsg {
-	msgID := uuid.New().String()
+	msgID := uuid.New().String() + SHA1(string(body))
 	return &TOAskProposalSeqMsg{
 		SrcID: srcID,
 		MsgID: msgID,

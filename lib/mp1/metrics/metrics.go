@@ -8,5 +8,5 @@ type Bandwith struct {
 
 type Delay struct {
 	messageID string
-	timeDelay int
+	timestamp string
 }

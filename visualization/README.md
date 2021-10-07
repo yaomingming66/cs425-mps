@@ -25,6 +25,14 @@ for each second you should plot the
 minimum, maximum, median, and 90th percentile delay at each second.
 Make sure your graphs and axes are well labeled, with units.
 
+
+## MP1
+
+Record bandwith in json, named after xxx_b.json
+
+Record delay in json, named after xxx_d.json
+
+
 ```json
 { "timestamp": "", "delay": "", "size": "" }
 ```

@@ -103,7 +103,7 @@ def reportMetrics():
         f.set_axis_labels(x_var="time: second", y_var="bandwidth: bytes per second")
         df.style.set_caption(f"{nodeID} Bandwith")
         plt.show()
-        plt.savefig("bandwith.png")
+        plt.savefig(f"{nodeID}_bandwith.png")
 
 
 if __name__ == "__main__":

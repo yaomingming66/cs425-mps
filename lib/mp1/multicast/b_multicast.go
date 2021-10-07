@@ -6,12 +6,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bamboovir/cs425/lib/broker"
 	errors "github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
 
 type BMulticast struct {
 	group              *Group
+	memberUpdate       *broker.Broker
 	emitters           map[string]chan []byte
 	emittersLock       *sync.Mutex
 	router             *BDispatcher
@@ -23,6 +25,7 @@ func NewBMulticast(group *Group) *BMulticast {
 	deliver := make(chan []byte)
 
 	return &BMulticast{
+		memberUpdate:       broker.New(),
 		group:              group,
 		emitters:           map[string]chan []byte{},
 		emittersLock:       &sync.Mutex{},
@@ -112,13 +115,20 @@ func (b *BMulticast) startClient(
 	b.emittersLock.Lock()
 	defer b.emittersLock.Unlock()
 	delete(b.emitters, dstNodeID)
+	b.memberUpdate.Publish(len(b.emitters))
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
+func (b *BMulticast) MembersUpdate() chan interface{} {
+	return b.memberUpdate.Subscribe()
+}
+
 func (b *BMulticast) Start(ctx context.Context) (err error) {
+	go b.memberUpdate.Start()
+
 	errGroup, _ := errgroup.WithContext(ctx)
 	errGroup.Go(
 		func() error {

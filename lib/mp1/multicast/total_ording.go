@@ -17,6 +17,7 @@ const (
 type ProposalItem struct {
 	ProposalSeqNum uint64
 	ProcessID      string
+	MsgID          string
 }
 
 type MsgItem struct {
@@ -39,7 +40,7 @@ type TotalOrding struct {
 	maxProposalSeqNumOfSelf         uint64
 	maxProposalSeqNumOfSelfLocker   *sync.Mutex
 	deliver                         chan []byte
-	waitProposalCounter             map[string][]*ProposalItem
+	waitProposalCounter             map[string]chan ProposalItem
 	waitProposalCounterLock         *sync.Mutex
 	msgItems                        map[string]*MsgItem
 	msgItemsLock                    *sync.Mutex
@@ -62,7 +63,7 @@ func NewTotalOrder(b *BMulticast, r *RMulticast) *TotalOrding {
 		maxAgreementSeqNumOfGroupLocker: &sync.Mutex{},
 		maxProposalSeqNumOfSelf:         0,
 		maxProposalSeqNumOfSelfLocker:   &sync.Mutex{},
-		waitProposalCounter:             map[string][]*ProposalItem{},
+		waitProposalCounter:             map[string]chan ProposalItem{},
 		waitProposalCounterLock:         &sync.Mutex{},
 		msgItems:                        map[string]*MsgItem{},
 		msgItemsLock:                    &sync.Mutex{},
@@ -78,6 +79,32 @@ func (t *TotalOrding) Router() *TODispatcher {
 	return t.router
 }
 
+func (t *TotalOrding) aggregateVotesAndMulticast(votes []*ProposalItem) error {
+	agreementSeqItem, err := MaxOfArrayProposalItem(votes)
+	if err != nil {
+		return err
+	}
+
+	announceAgreementMsg := NewTOAnnounceAgreementSeqMsg(
+		agreementSeqItem.ProcessID,
+		agreementSeqItem.ProposalSeqNum,
+		agreementSeqItem.MsgID,
+	)
+
+	announceAgreementMsgBytes, err := announceAgreementMsg.Encode()
+	if err != nil {
+		return err
+	}
+
+	// logger.Errorf("announce %s %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
+	err = t.rmulticast.Multicast(AnnounceAgreementSeqPath, announceAgreementMsgBytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (t *TotalOrding) Multicast(path string, msg []byte) (err error) {
 	tomsg := NewTOMsg(path, msg)
 	tomsgBytes, err := tomsg.Encode()
@@ -89,12 +116,50 @@ func (t *TotalOrding) Multicast(path string, msg []byte) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "to-multicast failed")
 	}
-	proposalSeqs := make([]*ProposalItem, 0)
+	waitCounterChannel := make(chan ProposalItem)
 
 	t.waitProposalCounterLock.Lock()
 	defer t.waitProposalCounterLock.Unlock()
-	t.waitProposalCounter[askMsg.MsgID] = proposalSeqs
-	err = t.bmulticast.Multicast(AskProposalSeqPath, askMsgBytes)
+
+	t.waitProposalCounter[askMsg.MsgID] = waitCounterChannel
+
+	go func() {
+		votes := make([]*ProposalItem, 0)
+		memberUpdateNotification := t.bmulticast.MembersUpdate()
+
+		for {
+			select {
+			case membersCountI := <-memberUpdateNotification:
+				var membersCount int
+
+				switch t := membersCountI.(type) {
+				case int:
+					membersCount = t
+				default:
+					membersCount = -1
+				}
+
+				if len(votes) < membersCount {
+					continue
+				}
+
+				t.aggregateVotesAndMulticast(votes)
+				return
+			case vote := <-waitCounterChannel:
+				votes = append(votes, &vote)
+
+				membersCount := t.bmulticast.MemberCount()
+				if len(votes) < membersCount {
+					continue
+				}
+
+				t.aggregateVotesAndMulticast(votes)
+				return
+			}
+		}
+	}()
+
+	err = t.rmulticast.Multicast(AskProposalSeqPath, askMsgBytes)
 	if err != nil {
 		return errors.Wrap(err, "to-multicast failed")
 	}
@@ -102,10 +167,10 @@ func (t *TotalOrding) Multicast(path string, msg []byte) (err error) {
 }
 
 func (t *TotalOrding) bindTODeliver() {
-	// rRouter := t.rmulticast.Router()
+	rRouter := t.rmulticast.Router()
 	bRouter := t.bmulticast.Router()
 
-	bRouter.Bind(AskProposalSeqPath, func(msg BMsg) {
+	rRouter.Bind(AskProposalSeqPath, func(msg RMsg) {
 		askMsg := &TOAskProposalSeqMsg{}
 		_, err := askMsg.Decode(msg.Body)
 		if err != nil {
@@ -168,46 +233,21 @@ func (t *TotalOrding) bindTODeliver() {
 		t.waitProposalCounterLock.Lock()
 		defer t.waitProposalCounterLock.Unlock()
 
-		_, ok := t.waitProposalCounter[replyProposalMsg.MsgID]
+		waitCounterChannel, ok := t.waitProposalCounter[replyProposalMsg.MsgID]
 
 		if !ok {
 			logger.Errorf("to msg id not exist")
 			return
 		}
 
-		t.waitProposalCounter[replyProposalMsg.MsgID] = append(
-			t.waitProposalCounter[replyProposalMsg.MsgID],
-			&ProposalItem{
-				ProposalSeqNum: replyProposalMsg.ProposalSeq,
-				ProcessID:      replyProposalMsg.ProcessID,
-			})
-
-		memberCount := t.bmulticast.MemberCount()
-		if len(t.waitProposalCounter[replyProposalMsg.MsgID]) < memberCount {
-			return
-		}
-
-		agreementSeqItem, err := MaxOfArrayProposalItem(t.waitProposalCounter[replyProposalMsg.MsgID])
-		if err != nil {
-			logger.Errorf("%v", err)
-			return
-		}
-
-		announceAgreementMsg := NewTOAnnounceAgreementSeqMsg(agreementSeqItem.ProcessID, agreementSeqItem.ProposalSeqNum, replyProposalMsg.MsgID)
-		announceAgreementMsgBytes, err := announceAgreementMsg.Encode()
-		if err != nil {
-			logger.Errorf("%v", err)
-			return
-		}
-		// logger.Errorf("announce %s %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
-		err = t.bmulticast.Multicast(AnnounceAgreementSeqPath, announceAgreementMsgBytes)
-		if err != nil {
-			logger.Errorf("%v", err)
-			return
+		waitCounterChannel <- ProposalItem{
+			ProposalSeqNum: replyProposalMsg.ProposalSeq,
+			ProcessID:      replyProposalMsg.ProcessID,
+			MsgID:          replyProposalMsg.MsgID,
 		}
 	})
 
-	bRouter.Bind(AnnounceAgreementSeqPath, func(msg BMsg) {
+	rRouter.Bind(AnnounceAgreementSeqPath, func(msg RMsg) {
 		announceAgreementMsg := &TOAnnounceAgreementSeqMsg{}
 		_, err := announceAgreementMsg.Decode(msg.Body)
 		if err != nil {

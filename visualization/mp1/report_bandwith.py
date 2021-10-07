@@ -46,7 +46,7 @@ def calcBandwidth(sizes: List[int]) -> int:
 
 def windowMetrics(metrics: Dict) -> Dict:
     rstDict = {}
-    for nodeID, js in metrics:
+    for nodeID, js in metrics.items():
         if len(js) == 0 or len(js) == 1:
             rstDict[nodeID] = js
             continue
@@ -61,7 +61,7 @@ def windowMetrics(metrics: Dict) -> Dict:
         for metric in js:
             timestamp = metric["timestamp"]
             bucketsIndex = int(timestamp - startTime)
-            rst[bucketsIndex].append(js)
+            rst[bucketsIndex].append(metric)
             
         rstDict[nodeID] = rst
 
@@ -70,7 +70,7 @@ def windowMetrics(metrics: Dict) -> Dict:
 
 def transformMetrics(metricWindows: Dict) -> Dict:
     rstDict = {}
-    for nodeID, windows in metricWindows:
+    for nodeID, windows in metricWindows.items():
         rst = []
         for metricWindow in windows:
             sizes = mapToSize(metricWindow)
@@ -89,7 +89,7 @@ def reportMetrics():
     metrics = readBandwithMetrics(path)
     metricsWindows = windowMetrics(metrics)
     reportDict = transformMetrics(metricsWindows)
-    for nodeID, reports in reportDict:
+    for nodeID, reports in reportDict.items():
         pprint(reports)
         sns.set_theme()
         sns.set_context("paper")
@@ -103,6 +103,7 @@ def reportMetrics():
         f.set_axis_labels(x_var="time: second", y_var="bandwidth: bytes per second")
         df.style.set_caption(f"{nodeID} Bandwith")
         plt.show()
+        plt.savefig("bandwith.png")
 
 
 if __name__ == "__main__":

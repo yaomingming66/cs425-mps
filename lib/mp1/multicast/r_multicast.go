@@ -1,50 +1,86 @@
 package multicast
 
-import "github.com/bamboovir/cs425/lib/mp1/dispatcher"
+import (
+	"context"
+	"sync"
 
-type RDispatcher struct {
-	dispatcher *dispatcher.Dispatcher
+	errors "github.com/pkg/errors"
+)
+
+type RMulticast struct {
+	bmulticast   *BMulticast
+	received     map[string]struct{}
+	receivedLock *sync.Mutex
+	router       *RDispatcher
+	deliver      chan []byte
 }
 
-func NewRDispatcher(in chan interface{}) *RDispatcher {
-	msgChan := make(chan dispatcher.Msg)
-	go func() {
-		for m := range in {
-			m := m.([]byte)
-			msg := RMsg{}
-			_, err := msg.Decode(m)
-			if err != nil {
-				logger.Errorf("decode r-multicast dispatcher message err: %v", err)
-				continue
-			}
-			msgChan <- dispatcher.Msg{
-				Path: msg.Path,
-				Body: m,
-			}
-		}
-	}()
+func NewRMulticast(b *BMulticast) *RMulticast {
+	deliver := make(chan []byte)
 
-	return &RDispatcher{
-		dispatcher: dispatcher.New(msgChan),
+	return &RMulticast{
+		bmulticast:   b,
+		received:     map[string]struct{}{},
+		receivedLock: &sync.Mutex{},
+		router:       NewRDispatcher(deliver),
+		deliver:      deliver,
 	}
 }
 
-func rMsgWrapper(f func(msg RMsg)) func(msg []byte) {
-	return func(m []byte) {
-		msg := RMsg{}
-		_, err := msg.Decode(m)
+func (r *RMulticast) Multicast(path string, msg []byte) (err error) {
+	rmsg := NewRMsg(path, msg)
+	rmsgBytes, err := rmsg.Encode()
+	if err != nil {
+		return errors.Wrap(err, "r-multicast failed")
+	}
+	err = r.bmulticast.Multicast(RMultiCastPath, rmsgBytes)
+	if err != nil {
+		return errors.Wrap(err, "r-multicast failed")
+	}
+	return nil
+}
+
+func (r *RMulticast) bindRDeliver() {
+	r.bmulticast.router.Bind(RMultiCastPath, func(msg BMsg) {
+		rmsg := &RMsg{}
+		_, err := rmsg.Decode(msg.Body)
 		if err != nil {
-			logger.Errorf("decode r-multicast msg failed")
+			logger.Errorf("decode r message failed: %v", err)
 			return
 		}
-		f(msg)
-	}
+		r.receivedLock.Lock()
+		defer r.receivedLock.Unlock()
+		_, ok := r.received[rmsg.ID]
+		if !ok {
+			r.received[rmsg.ID] = struct{}{}
+			if msg.SrcID != r.bmulticast.group.SelfNodeID {
+				rmsgCopy := &RMsg{
+					ID:   rmsg.ID,
+					Path: rmsg.Path,
+					Body: rmsg.Body,
+				}
+				rmsgBytes, err := rmsgCopy.Encode()
+				if err != nil {
+					logger.Errorf("encode r message failed: %v", err)
+					return
+				}
+				err = r.bmulticast.Multicast(RMultiCastPath, rmsgBytes)
+
+				if err != nil {
+					logger.Errorf("b-multicast message failed: %v", err)
+					return
+				}
+			}
+			r.deliver <- msg.Body
+		}
+	})
 }
 
-func (r *RDispatcher) Bind(path string, f func(msg RMsg)) {
-	r.dispatcher.Bind(path, rMsgWrapper(f))
+func (r *RMulticast) Router() *RDispatcher {
+	return r.router
 }
 
-func (r *RDispatcher) Run() {
-	r.dispatcher.Run()
+func (r *RMulticast) Start(ctx context.Context) (err error) {
+	r.bindRDeliver()
+	return r.bmulticast.Start(ctx)
 }

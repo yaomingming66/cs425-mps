@@ -1,128 +1,247 @@
 package multicast
 
-// import (
-// 	"fmt"
+import (
+	"container/heap"
+	"context"
+	"sync"
 
-// 	"github.com/bamboovir/cs425/lib/mp1/broker"
-// )
+	errors "github.com/pkg/errors"
+)
 
-// const (
-// 	AskProposalSeqPath       = "/total-ording/ask-proposal-seq"
-// 	WaitProposalSeqPath      = "/total-ording/wait-proposal-seq"
-// 	AnnounceAgreementSeqPath = "/total-ording/announce-agreement-seq"
-// )
+const (
+	AskProposalSeqPath       = "/total-ording/ask-proposal-seq"
+	WaitProposalSeqPath      = "/total-ording/wait-proposal-seq"
+	AnnounceAgreementSeqPath = "/total-ording/announce-agreement-seq"
+)
 
-// // 只需要一个 RDeliver instance
-// // 进行路径匹配
-// type TotalOrding struct {
-// 	maxAgreementSeqNumOfGroup uint64
-// 	maxProposalSeqNumOfSelf   uint64
-// 	group                     *Group
-// 	deliverBroker 		  *broker.Broker
-// }
+type ProposalItem struct {
+	ProposalSeqNum uint64
+	ProcessID      string
+}
 
-// func NewTotalOrder(group *Group) *TotalOrding {
-// 	return &TotalOrding{
-// 		maxAgreementSeqNumOfGroup: 0,
-// 		maxProposalSeqNumOfSelf:   0,
-// 		group:                     group,
-// 	}
-// }
+type TotalOrding struct {
+	bmulticast                      *BMulticast
+	rmulticast                      *RMulticast
+	holdQueue                       *TOHoldPriorityQueue
+	holdQueueLocker                 *sync.Mutex
+	router                          *TODispatcher
+	maxAgreementSeqNumOfGroup       uint64
+	maxAgreementSeqNumOfGroupLocker *sync.Mutex
+	maxProposalSeqNumOfSelf         uint64
+	maxProposalSeqNumOfSelfLocker   *sync.Mutex
+	deliver                         chan []byte
+	waitProposalCounter             map[string][]*ProposalItem
+	waitProposalCounterLock         *sync.Mutex
+	msgMsgBody                      map[string][]byte
+	msgMsgBodyLock                  *sync.Mutex
+	msgAgreementSeqNum              map[string]uint64
+	msgAgreementSeqNumLock          *sync.Mutex
+	msgProposalSeqNum               map[string]uint64
+	msgProposalSeqNumLock           *sync.Mutex
+}
 
-// func (t *TotalOrding) TOMulticast(msg []byte) {
-// 	msg = ""
-// 	msg.path = AskProposalSeqPath
-// 	msg.id = ""
-// 	msg.body = ""
-// 	t.group.RMulticast(msg)
-// 	go t.WaitProposal(id)
+func NewTotalOrder(b *BMulticast, r *RMulticast) *TotalOrding {
+	deliver := make(chan []byte)
+	holdQueue := &TOHoldPriorityQueue{}
+	heap.Init(holdQueue)
 
-// }
+	return &TotalOrding{
+		bmulticast:                      b,
+		rmulticast:                      r,
+		deliver:                         deliver,
+		holdQueue:                       holdQueue,
+		holdQueueLocker:                 &sync.Mutex{},
+		router:                          NewTODispatcher(deliver),
+		maxAgreementSeqNumOfGroup:       0,
+		maxAgreementSeqNumOfGroupLocker: &sync.Mutex{},
+		maxProposalSeqNumOfSelf:         0,
+		maxProposalSeqNumOfSelfLocker:   &sync.Mutex{},
+		waitProposalCounter:             map[string][]*ProposalItem{},
+		waitProposalCounterLock:         &sync.Mutex{},
+		msgMsgBody:                      map[string][]byte{},
+		msgMsgBodyLock:                  &sync.Mutex{},
+		msgAgreementSeqNum:              map[string]uint64{},
+		msgAgreementSeqNumLock:          &sync.Mutex{},
+		msgProposalSeqNum:               map[string]uint64{},
+		msgProposalSeqNumLock:           &sync.Mutex{},
+	}
+}
 
-// func (t *TotalOrding) WaitProposalSeqs(id string) {
-// 	rDeliverChannel := t.group.RDeliver()
-// 	proposalSeqs := make([]uint64, 0)
-// 	for msg := range rDeliverChannel {
-// 		msg := msg.([]byte)
-// 		src := ""
-// 		// try wait all message
-// 		msg.path = WaitProposalSeqPath
-// 		msg.id == id
-// 		if msg.id == id {
-// 			proposalSeqs = append(proposalSeqs, msg.proposalSeq)
-// 		}
-// 		proposalSeqs
-// 	}
+func (t *TotalOrding) Start(ctx context.Context) (err error) {
+	t.bindTODeliver()
+	return t.rmulticast.Start(ctx)
+}
 
-// 	//
-// 	agreementSeqNum := MaxOfArrayUint64(proposalSeqs)
+func (t *TotalOrding) Router() *TODispatcher {
+	return t.router
+}
 
-// 	msg := ""
-// 	msg.path = "/total-ording/agreement-seq"
-// 	msg.id = ""
-// 	t.group.RMulticast(msg)
-// }
+func (t *TotalOrding) Multicast(path string, msg []byte) (err error) {
+	tomsg := NewTOMsg(path, msg)
+	tomsgBytes, err := tomsg.Encode()
+	if err != nil {
+		return errors.Wrap(err, "to-multicast failed")
+	}
+	askMsg := NewTOAskProposalSeqMsg(t.bmulticast.group.SelfNodeID, tomsgBytes)
+	askMsgBytes, err := askMsg.Encode()
+	if err != nil {
+		return errors.Wrap(err, "to-multicast failed")
+	}
+	proposalSeqs := make([]*ProposalItem, 0)
 
-// func MaxUint64(x uint64, y uint64) uint64 {
-// 	if x > y {
-// 		return x
-// 	}
-// 	return y
-// }
+	t.waitProposalCounterLock.Lock()
+	defer t.waitProposalCounterLock.Unlock()
+	t.waitProposalCounter[askMsg.MsgID] = proposalSeqs
+	logger.Errorf("send ask %s %s", askMsg.SrcID, askMsg.MsgID)
+	err = t.rmulticast.Multicast(AskProposalSeqPath, askMsgBytes)
+	if err != nil {
+		return errors.Wrap(err, "to-multicast failed")
+	}
+	return nil
+}
 
-// func MaxOfArrayUint64(arr []uint64) (uint64, error) {
-// 	if len(arr) < 1 {
-// 		return 0, fmt.Errorf("arr is an empty sequence")
-// 	}
+func (t *TotalOrding) bindTODeliver() {
+	rRouter := t.rmulticast.Router()
+	bRouter := t.bmulticast.Router()
 
-// 	max := arr[0]
-// 	for _, value := range arr {
-// 		if max < value {
-// 			max = value
-// 		}
-// 	}
-// 	return max, nil
-// }
+	rRouter.Bind(AskProposalSeqPath, func(msg RMsg) {
+		askMsg := &TOAskProposalSeqMsg{}
+		_, err := askMsg.Decode(msg.Body)
+		if err != nil {
+			logger.Errorf("%v", err)
+			return
+		}
 
-// func (t *TotalOrding) RegisterTOMulticastProposal() {
-// 	t.Bind(AskProposalSeqPath, func(msg []byte) {
-// 		msg.src := ""
-// 		msg.id := ""
-// 		msg.body := ""
-// 		proposalSeqNum := MaxUint64(t.maxAgreementSeqNumOfGroup, t.maxProposalSeqNumOfSelf) + 1
-// 		t.maxProposalSeqNumOfSelf = proposalSeqNum
-// 		t.group.Unicast(src, {
-// 			msg.id,
-// 			proposalSeqNum,
-// 			WaitProposalSeqPath
-// 			msg.selfProcessID
-// 		})
-// 	})
+		t.maxAgreementSeqNumOfGroupLocker.Lock()
+		defer t.maxAgreementSeqNumOfGroupLocker.Unlock()
+		proposalSeqNum := MaxUint64(t.maxAgreementSeqNumOfGroup, t.maxProposalSeqNumOfSelf) + 1
+		t.maxProposalSeqNumOfSelf = proposalSeqNum
 
-// 	t.Bind(AnnounceAgreementSeqPath, func(msg []byte) {
-// 		msg.id := ""
-// 		msg.agreementSeqNum := 0
-// 		t.maxAgreementSeqNumOfGroup = MaxUint64(t.maxAgreementSeqNumOfGroup, msg.agreementSeqNum)
+		t.msgProposalSeqNumLock.Lock()
+		defer t.msgProposalSeqNumLock.Unlock()
+		t.msgProposalSeqNum[askMsg.MsgID] = proposalSeqNum
 
-// 		if msg.agreementSeqNum != msgIDToProposalSeqNum[id] {
-// 			push into heap
-// 		}
+		t.msgMsgBodyLock.Lock()
+		defer t.msgMsgBodyLock.Unlock()
+		t.msgMsgBody[askMsg.MsgID] = askMsg.Body
 
-// 		if heap[0] () has agreement {
-// 			t.deliverBroker.Publish(...)
-// 		}
-// 	})
+		t.holdQueueLocker.Lock()
+		defer t.holdQueueLocker.Unlock()
 
-// 	rDeliverChannel := t.group.RDeliver()
-// 	for msg := range rDeliverChannel {
-// 		msg := msg.([]byte)
-// 		src := ""
-// 		proposalSeqNum := MaxUint64(t.maxAgreementSeqNumOfGroup, t.maxProposalSeqNumOfSelf) + 1
-// 		t.maxProposalSeqNumOfSelf = proposalSeqNum
-// 		/*
-// 			src,
+		heap.Push(t.holdQueue, &TOHoldQueueItem{
+			proposalSeqNum: proposalSeqNum,
+			msgID:          askMsg.MsgID,
+			processID:      askMsg.SrcID,
+		})
 
-// 		*/
+		replyProposalMsg := NewTOReplyProposalSeqMsg(t.bmulticast.group.SelfNodeID, askMsg.MsgID, proposalSeqNum)
+		replyProposalMsgBytes, err := replyProposalMsg.Encode()
+		if err != nil {
+			logger.Errorf("%v", err)
+			return
+		}
+		err = t.bmulticast.Unicast(askMsg.SrcID, WaitProposalSeqPath, replyProposalMsgBytes)
+		if err != nil {
+			logger.Errorf("%v", err)
+			return
+		}
+	})
 
-// 	}
-// }
+	bRouter.Bind(WaitProposalSeqPath, func(msg BMsg) {
+		replyProposalMsg := &TOReplyProposalSeqMsg{}
+		_, err := replyProposalMsg.Decode(msg.Body)
+		if err != nil {
+			logger.Errorf("%v", err)
+			return
+		}
+
+		t.waitProposalCounterLock.Lock()
+		defer t.waitProposalCounterLock.Unlock()
+
+		_, ok := t.waitProposalCounter[replyProposalMsg.MsgID]
+
+		if !ok {
+			logger.Errorf("to msg id not exist")
+			return
+		}
+
+		t.waitProposalCounter[replyProposalMsg.MsgID] = append(
+			t.waitProposalCounter[replyProposalMsg.MsgID],
+			&ProposalItem{
+				ProposalSeqNum: replyProposalMsg.ProposalSeq,
+				ProcessID:      replyProposalMsg.ProcessID,
+			})
+
+		memberCount := t.bmulticast.MemberCount()
+		if len(t.waitProposalCounter[replyProposalMsg.MsgID]) < memberCount {
+			return
+		}
+
+		agreementSeqItem, err := MaxOfArrayProposalItem(t.waitProposalCounter[replyProposalMsg.MsgID])
+		if err != nil {
+			logger.Errorf("%v", err)
+			return
+		}
+
+		announceAgreementMsg := NewTOAnnounceAgreementSeqMsg(agreementSeqItem.ProcessID, agreementSeqItem.ProposalSeqNum, replyProposalMsg.MsgID)
+		announceAgreementMsgBytes, err := announceAgreementMsg.Encode()
+		if err != nil {
+			logger.Errorf("%v", err)
+			return
+		}
+		logger.Errorf("announce %s %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
+		err = t.rmulticast.Multicast(AnnounceAgreementSeqPath, announceAgreementMsgBytes)
+		if err != nil {
+			logger.Errorf("%v", err)
+			return
+		}
+	})
+
+	rRouter.Bind(AnnounceAgreementSeqPath, func(msg RMsg) {
+		announceAgreementMsg := &TOAnnounceAgreementSeqMsg{}
+		_, err := announceAgreementMsg.Decode(msg.Body)
+		if err != nil {
+			logger.Errorf("%v", err)
+			return
+		}
+		logger.Errorf("get announce %s -> %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
+		t.maxAgreementSeqNumOfGroupLocker.Lock()
+		defer t.maxAgreementSeqNumOfGroupLocker.Unlock()
+		t.maxAgreementSeqNumOfGroup = MaxUint64(t.maxAgreementSeqNumOfGroup, announceAgreementMsg.AgreementSeq)
+
+		t.msgAgreementSeqNumLock.Lock()
+		defer t.msgAgreementSeqNumLock.Unlock()
+		t.msgAgreementSeqNum[announceAgreementMsg.MsgID] = announceAgreementMsg.AgreementSeq
+
+		t.holdQueueLocker.Lock()
+		defer t.holdQueueLocker.Unlock()
+
+		for _, v := range *t.holdQueue {
+			if v.msgID == announceAgreementMsg.MsgID {
+				v.proposalSeqNum = announceAgreementMsg.AgreementSeq
+				v.processID = announceAgreementMsg.ProcessID
+			}
+		}
+
+		t.msgMsgBodyLock.Lock()
+		defer t.msgMsgBodyLock.Unlock()
+
+		heap.Init(t.holdQueue)
+
+		for t.holdQueue.Len() != 0 {
+			item := heap.Pop(t.holdQueue).(*TOHoldQueueItem)
+			heap.Push(t.holdQueue, item)
+			_, hasAgreement := t.msgAgreementSeqNum[item.msgID]
+			if !hasAgreement {
+				break
+			}
+			msgBody, ok := t.msgMsgBody[item.msgID]
+			if ok {
+				t.deliver <- msgBody
+				delete(t.msgMsgBody, item.msgID)
+				delete(t.msgAgreementSeqNum, item.msgID)
+				heap.Pop(t.holdQueue)
+			}
+		}
+	})
+}

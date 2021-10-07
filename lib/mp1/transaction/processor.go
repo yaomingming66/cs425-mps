@@ -14,15 +14,15 @@ func NewProcessor() *Processor {
 	}
 }
 
-func rProcessWrapper(f func(msg []byte)) func(msg multicast.RMsg) {
-	return func(msg multicast.RMsg) {
+func toProcessWrapper(f func(msg []byte)) func(msg multicast.TOMsg) {
+	return func(msg multicast.TOMsg) {
 		f(msg.Body)
 	}
 }
 
-func (p *Processor) RegisteTransactionHandler(d *multicast.RDispatcher) {
-	d.Bind(DepositPath, rProcessWrapper(p.processDeposit))
-	d.Bind(TransferPath, rProcessWrapper(p.processTransfer))
+func (p *Processor) RegisteTransactionHandler(d *multicast.TODispatcher) {
+	d.Bind(DepositPath, toProcessWrapper(p.processDeposit))
+	d.Bind(TransferPath, toProcessWrapper(p.processTransfer))
 }
 
 func (p *Processor) processDeposit(msg []byte) {

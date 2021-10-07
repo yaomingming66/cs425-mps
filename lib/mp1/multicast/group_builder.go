@@ -2,8 +2,6 @@ package multicast
 
 import (
 	"sync"
-
-	"github.com/bamboovir/cs425/lib/mp1/broker"
 )
 
 type GroupBuilder struct {
@@ -40,15 +38,9 @@ func (g *GroupBuilder) WithMembers(members []Node) *GroupBuilder {
 
 func (g *GroupBuilder) Build() *Group {
 	return &Group{
-		SelfNodeID:         g.SelfNodeID,
-		SelfNodeAddr:       g.SelfNodeAddr,
-		Members:            g.Memebers,
-		emitters:           map[string]chan []byte{},
-		emittersLock:       &sync.Mutex{},
-		bDeliverBroker:     broker.New(),
-		rDeliverBroker:     broker.New(),
-		received:           map[string]struct{}{},
-		receivedLock:       &sync.Mutex{},
-		startSyncWaitGroup: &sync.WaitGroup{},
+		SelfNodeID:   g.SelfNodeID,
+		SelfNodeAddr: g.SelfNodeAddr,
+		members:      g.Memebers,
+		membersLock:  &sync.Mutex{},
 	}
 }

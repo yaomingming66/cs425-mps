@@ -59,41 +59,6 @@ func New(in chan Msg) *Dispatcher {
 	return d
 }
 
-func NewFromBytesChan(in chan []byte) *Dispatcher {
-	msgChan := make(chan Msg)
-	go func() {
-		for m := range in {
-			msg := Msg{}
-			_, err := msg.Decode(m)
-			if err != nil {
-				logger.Errorf("decode dispatcher message err: %v", err)
-				continue
-			}
-			msgChan <- msg
-		}
-	}()
-
-	return New(msgChan)
-}
-
-func NewFromBytesInterfaceChan(in chan interface{}) *Dispatcher {
-	msgChan := make(chan Msg)
-	go func() {
-		for m := range in {
-			m := m.([]byte)
-			msg := Msg{}
-			_, err := msg.Decode(m)
-			if err != nil {
-				logger.Errorf("decode dispatcher message err: %v", err)
-				continue
-			}
-			msgChan <- msg
-		}
-	}()
-
-	return New(msgChan)
-}
-
 func (d *Dispatcher) Bind(path string, f func(msg []byte)) {
 	d.routerLock.Lock()
 	defer d.routerLock.Unlock()
@@ -101,13 +66,12 @@ func (d *Dispatcher) Bind(path string, f func(msg []byte)) {
 }
 
 func (d *Dispatcher) Run() {
-	for {
-		msg := <-d.publisher
+	for msg := range d.publisher {
 		d.routerLock.Lock()
 		f, ok := d.routers[msg.Path]
 		d.routerLock.Unlock()
 		if !ok {
-			logger.Errorf("path [%s] don't match any router", msg.Path)
+			logger.Errorf("path [%s] with body [%s] don't match any router", msg.Path, msg.Body)
 			continue
 		}
 		f(msg.Body)

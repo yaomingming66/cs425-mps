@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"encoding/json"
 
-	"github.com/bamboovir/cs425/lib/mp1/broker"
 	"github.com/bamboovir/cs425/lib/mp1/types"
 	log "github.com/sirupsen/logrus"
 )
@@ -19,7 +18,7 @@ const (
 	CONN_TYPE = "tcp"
 )
 
-func runServer(nodeID string, addr string, out *broker.Broker) (err error) {
+func runServer(nodeID string, addr string, out chan []byte) (err error) {
 	socket, err := net.Listen(CONN_TYPE, addr)
 
 	if err != nil {
@@ -40,7 +39,7 @@ func runServer(nodeID string, addr string, out *broker.Broker) (err error) {
 	}
 }
 
-func handleConn(conn net.Conn, out *broker.Broker) {
+func handleConn(conn net.Conn, out chan []byte) {
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
@@ -57,7 +56,7 @@ func handleConn(conn net.Conn, out *broker.Broker) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		out.Publish([]byte(line))
+		out <- []byte(line)
 	}
 
 	err := scanner.Err()

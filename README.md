@@ -1,5 +1,10 @@
 # CS 425
 
+- [MP0](./docs/mp0/README.md)
+- [MP1](./docs/mp1/README.md)
+- [MP2](./docs/mp2/README.md)
+- [MP3](./docs/mp3/README.md)
+
 ## Development Environment configuration
 
 ### Golang
@@ -20,38 +25,6 @@ go get -u github.com/rakyll/gotest
 code --install-extension golang.go
 ```
 
-## MP0
-
-```bash
-# Client Test
-./bin/mp0-s 8080 or socat TCP-LISTEN:8080 -
-./bin/mp0-c A 127.0.0.1 8080
-python3 ./script/mp0/generator.py 1 100 | ./bin/mp0-c A 127.0.0.1 8080
-```
-
-## MP1
-
-```bash
-# Quick Build
-bash ./script/unix/mp1/quick_build.bash
-# Release Build
-bash ./script/unix/mp1/build.bash
-# Usage
-
-# 2 nodes for local test
-./bin/mp1 A 8080 ./lib/mp1/config/2/config_a.txt
-./bin/mp1 B 8081 ./lib/mp1/config/2/config_b.txt
-
-# 3 nodes
-./bin/mp1 A 8080 ./lib/mp1/config/config_a.txt
-./bin/mp1 B 8081 ./lib/mp1/config/config_b.txt
-./bin/mp1 C 8082 ./lib/mp1/config/config_c.txt
-
-python3 -u gentx.py 0.5 | ./bin/mp1 a 8080 ./lib/mp1/config/3/config_a.txt
-python3 -u gentx.py 0.5 | ./bin/mp1 b 8081 ./lib/mp1/config/3/config_b.txt
-python3 -u gentx.py 0.5 | ./bin/mp1 c 8082 ./lib/mp1/config/3/config_c.txt
-```
-
 ### Commonly used quick commands
 
 fmt code
@@ -59,6 +32,7 @@ fmt code
 ```bash
 bash ./script/unix/fmt.bash
 ```
+
 ```linux
 ./script/linux/fmt.bash
 ```
@@ -68,6 +42,7 @@ build mp0 static binary to ./bin
 ```bash
 bash ./script/unix/mp0/build.bash
 ```
+
 ```linux
 ./script/linux/mp0/build.sh
 ```
@@ -101,4 +76,10 @@ trace log
 
 ```bash
 LOG=trace
+```
+
+json log
+
+```bash
+LOG=json
 ```

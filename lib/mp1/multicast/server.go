@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 
+	"github.com/bamboovir/cs425/lib/mp1/metrics"
 	"github.com/bamboovir/cs425/lib/mp1/types"
 	log "github.com/sirupsen/logrus"
 )
@@ -35,11 +36,11 @@ func runServer(nodeID string, addr string, out chan []byte) (err error) {
 			continue
 		}
 
-		go handleConn(conn, out)
+		go handleConn(nodeID, conn, out)
 	}
 }
 
-func handleConn(conn net.Conn, out chan []byte) {
+func handleConn(nodeID string, conn net.Conn, out chan []byte) {
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
@@ -56,7 +57,9 @@ func handleConn(conn net.Conn, out chan []byte) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		out <- []byte(line)
+		lineBytes := []byte(line)
+		metrics.NewBandwidthLogEntry(nodeID, len(lineBytes)).Log()
+		out <- lineBytes
 	}
 
 	err := scanner.Err()

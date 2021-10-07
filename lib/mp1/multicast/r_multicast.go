@@ -7,6 +7,10 @@ import (
 	errors "github.com/pkg/errors"
 )
 
+const (
+	RMultiCastPath = "/r-multicast"
+)
+
 type RMulticast struct {
 	bmulticast   *BMulticast
 	received     map[string]struct{}

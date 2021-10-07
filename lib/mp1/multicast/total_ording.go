@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/bamboovir/cs425/lib/mp1/metrics"
 	errors "github.com/pkg/errors"
 )
 
@@ -300,7 +301,8 @@ func (t *TotalOrding) bindTODeliver() {
 			if !ok || !msg.Agreed {
 				break
 			}
-			logger.Errorf("to deliver [%d:%s][%s]", item.proposalSeqNum, item.processID, item.msgID)
+			logger.Infof("TO deliver [%d:%s][%s]", item.proposalSeqNum, item.processID, item.msgID)
+			metrics.NewDelayLogEntry(t.bmulticast.group.SelfNodeID, item.msgID).Log()
 			msgBody := msg.Body
 			t.deliver <- msgBody
 			delete(t.msgItems, item.msgID)

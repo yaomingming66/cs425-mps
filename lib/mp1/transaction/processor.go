@@ -1,6 +1,8 @@
 package transaction
 
 import (
+	"fmt"
+
 	"github.com/bamboovir/cs425/lib/mp1/multicast"
 )
 
@@ -34,12 +36,15 @@ func (p *Processor) processDeposit(msg []byte) {
 	}
 
 	logger.Infof("deposit: %s -> %d", deposit.Account, deposit.Amount)
+	fmt.Printf("DEPOSIT %s %d\n", deposit.Account, deposit.Amount)
 	err = p.transaction.Deposit(deposit.Account, deposit.Amount)
 	if err != nil {
 		logger.Errorf("deposit err: %v", err)
 		return
 	}
-	logger.Infof(p.transaction.BalancesSnapshotStdSortedString())
+	snapshot := p.transaction.BalancesSnapshotStdSortedString()
+	logger.Info(snapshot)
+	fmt.Printf("%s\n", snapshot)
 }
 
 func (p *Processor) processTransfer(msg []byte) {
@@ -51,10 +56,13 @@ func (p *Processor) processTransfer(msg []byte) {
 	}
 
 	logger.Infof("tranfer: %s -> %s %d", transfer.FromAccount, transfer.ToAccount, transfer.Amount)
+	fmt.Printf("TRANSFER %s %s %d", transfer.FromAccount, transfer.ToAccount, transfer.Amount)
 	err = p.transaction.Transfer(transfer.FromAccount, transfer.ToAccount, transfer.Amount)
 	if err != nil {
 		logger.Errorf("transfer err: %v", err)
 		return
 	}
-	logger.Info(p.transaction.BalancesSnapshotStdSortedString())
+	snapshot := p.transaction.BalancesSnapshotStdSortedString()
+	logger.Info(snapshot)
+	fmt.Printf("%s\n", snapshot)
 }

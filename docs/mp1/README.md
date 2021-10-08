@@ -57,6 +57,17 @@ python3 -u ./script/unix/mp1/gentx.py 0.5 | LOG=json ./bin/mp1 C 8082 ./lib/mp1/
 python3 -u ./script/unix/mp1/gentx.py 0.5 | LOG=trace ./bin/mp1 A 8080 ./lib/mp1/config/3/config_a.txt 2> /tmp/a.log
 python3 -u ./script/unix/mp1/gentx.py 0.5 | LOG=trace ./bin/mp1 B 8081 ./lib/mp1/config/3/config_b.txt 2> /tmp/b.log
 python3 -u ./script/unix/mp1/gentx.py 0.5 | LOG=trace ./bin/mp1 C 8082 ./lib/mp1/config/3/config_c.txt 2> /tmp/c.log
+
+# 8 nodes
+python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node1 8080 ./lib/mp1/config/8/config_1.txt 2> /tmp/1.log
+python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node2 8081 ./lib/mp1/config/8/config_2.txt 2> /tmp/2.log
+python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node3 8082 ./lib/mp1/config/8/config_3.txt 2> /tmp/3.log
+python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node4 8083 ./lib/mp1/config/8/config_4.txt 2> /tmp/4.log
+python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node5 8084 ./lib/mp1/config/8/config_5.txt 2> /tmp/5.log
+python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node6 8085 ./lib/mp1/config/8/config_6.txt 2> /tmp/6.log
+python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node7 8086 ./lib/mp1/config/8/config_7.txt 2> /tmp/7.log
+python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node8 8087 ./lib/mp1/config/8/config_8.txt 2> /tmp/8.log
+
 ```
 
 ### Verbose Mode

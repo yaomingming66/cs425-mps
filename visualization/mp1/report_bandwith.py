@@ -14,30 +14,30 @@ import matplotlib.pyplot as plt
 from collections import *
 
 def parseMetrics(line: str) -> Dict:
-    obj = json.loads(line)
+    obj = json.loads(json.loads(line)["msg"])
     rst = {
-        "nodeID": str(obj["nodeID"]),
-        "timestamp": float(obj["timestamp"]),
-        "size": int(obj["size"]),
+        "node_id": str(obj["node_id"]),
+        "timestamp": float(obj["timestamp"]) // 1e9,
+        "bytes_size": int(obj["bytes_size"]),
     }
     return rst
 
 
 def readBandwithMetrics(path: Path) -> Dict:
     metrics = defaultdict(list)
-    json_files = [pos_json for pos_json in os.listdir(path) if pos_json.endswith('b.json')]
+    json_files = [pos_json for pos_json in os.listdir(path) if pos_json.endswith('bandwidth.log')]
     for json_file in json_files:
         with open(os.path.join(path, json_file), "r") as f:
             for line in f:
                 parsed_json = parseMetrics(line)
-                metrics[parsed_json["nodeID"]].append(parsed_json)
+                metrics[parsed_json["node_id"]].append(parsed_json)
     for val in metrics.values():
         val.sort(key=lambda x: x["timestamp"])
     return metrics
 
 
 def mapToSize(wins: List) -> List:
-    return [*map(lambda x: x["size"], wins)]
+    return [*map(lambda x: x["bytes_size"], wins)]
 
 
 def calcBandwidth(sizes: List[int]) -> int:
@@ -46,15 +46,15 @@ def calcBandwidth(sizes: List[int]) -> int:
 
 def windowMetrics(metrics: Dict) -> Dict:
     rstDict = {}
-    for nodeID, js in metrics.items():
+    for node_id, js in metrics.items():
         if len(js) == 0 or len(js) == 1:
-            rstDict[nodeID] = js
+            rstDict[node_id] = js
             continue
 
         start, end = js[0], js[-1]
         startTime, endTime = start["timestamp"], end["timestamp"]
         timeDiff = endTime - startTime
-        bucketsSize = math.ceil(timeDiff)
+        bucketsSize = math.ceil(timeDiff) + 1
 
         rst = [[] for _ in range(bucketsSize)]
 
@@ -63,14 +63,13 @@ def windowMetrics(metrics: Dict) -> Dict:
             bucketsIndex = int(timestamp - startTime)
             rst[bucketsIndex].append(metric)
             
-        rstDict[nodeID] = rst
-
+        rstDict[node_id] = rst
     return rstDict
 
 
 def transformMetrics(metricWindows: Dict) -> Dict:
     rstDict = {}
-    for nodeID, windows in metricWindows.items():
+    for node_id, windows in metricWindows.items():
         rst = []
         for metricWindow in windows:
             sizes = mapToSize(metricWindow)
@@ -79,7 +78,7 @@ def transformMetrics(metricWindows: Dict) -> Dict:
                     "bandwidth": calcBandwidth(sizes),
                 }
             )
-        rstDict[nodeID] = rst
+        rstDict[node_id] = rst
     return rstDict
 
 
@@ -89,7 +88,7 @@ def reportMetrics():
     metrics = readBandwithMetrics(path)
     metricsWindows = windowMetrics(metrics)
     reportDict = transformMetrics(metricsWindows)
-    for nodeID, reports in reportDict.items():
+    for node_id, reports in reportDict.items():
         pprint(reports)
         sns.set_theme()
         sns.set_context("paper")
@@ -101,9 +100,9 @@ def reportMetrics():
         )
         f = sns.relplot(x="time", y="bandwidth", kind="line", data=df)
         f.set_axis_labels(x_var="time: second", y_var="bandwidth: bytes per second")
-        df.style.set_caption(f"{nodeID} Bandwith")
+        df.style.set_caption(f"{node_id} Bandwith")
         plt.show()
-        plt.savefig(f"{nodeID}_bandwith.png")
+        plt.savefig(f"{node_id}_bandwith.png")
 
 
 if __name__ == "__main__":

@@ -14,14 +14,13 @@ import matplotlib.pyplot as plt
 from collections import *
 
 def parseMetrics(line: str) -> Dict:
-    obj = json.loads(line)
-    msg = obj["message"]
-    return str(msg["messageID"]), float(msg["timestamp"])
+    msg = json.loads(json.loads(line)["msg"])
+    return str(msg["msg_id"]), float(msg["timestamp"])
 
 
 def readDelaywithMetrics(path: Path) -> Dict:
     metrics = defaultdict(lambda: (float("inf"), -float("inf")))
-    json_files = [pos_json for pos_json in os.listdir(path) if pos_json.endswith('d.json')]
+    json_files = [pos_json for pos_json in os.listdir(path) if pos_json.endswith('delay.log')]
     for json_file in json_files:
         with open(os.path.join(path, json_file), "r") as f:
             for line in f:
@@ -49,7 +48,7 @@ def reportMetrics():
         }
     )
     f = sns.relplot(x="message", y="delay", kind="scatter", data=df)
-    f.set_axis_labels(x_var="message: message", y_var="delay: seconds")
+    f.set_axis_labels(x_var="message: message", y_var="delay: nano seconds")
     df.style.set_caption(f"Message Delay")
     plt.show()
     plt.savefig(f"delay.png")

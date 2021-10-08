@@ -12,11 +12,6 @@ The cluster number we are working on is `g03`
 [GitHub Link](https://github.com/cs425-ece428/mp1-monad-mp1)
 [https://github.com/cs425-ece428/mp1-monad-mp1](https://github.com/cs425-ece428/mp1-monad-mp1)
 
-```bash
-ssh your_netid@cs425-gXX-YY.cs.illinois.edu
-ssh your_netid@fa21-cs425-gXX-YY.cs.illinois.edu
-```
-
 ## Instructions for building and running
 
 ```bash
@@ -183,24 +178,115 @@ A one to many proxy for channel
 
 ## Graphs of the Evaluation
 
-![bandwidth](./assets/bandwidth/3_0_5_100s.png)
-![delay](./assets/delay/3_0_5_100s.png)
-
 ### 3 nodes, 0.5 Hz each, running for 100 seconds
 
-![bandwidth](./assets/bandwidth/3_0_5_100s.png)
-![delay](./assets/delay/3_0_5_100s.png)
+A
+
+![bandwidth](../../visualization/mp1/assets/3node/A_bandwith.png)
+
+B
+
+![bandwidth](../../visualization/mp1/assets/3node/B_bandwith.png)
+
+C
+
+![bandwidth](../../visualization/mp1/assets/3node/C_bandwith.png)
+
+Delay
+
+![delay](../../visualization/mp1/assets/3node/delay.png)
+
 
 ### 8 nodes, 5 Hz each, running for 100 seconds
 
-![bandwidth](./assets/bandwidth/3_0_5_100s.png)
-![delay](./assets/delay/3_0_5_100s.png)
+node1
+
+![bandwidth](../../visualization/mp1/assets/8nodes/node1_bandwith.png)
+
+node2
+
+![bandwidth](../../visualization/mp1/assets/8nodes/node2_bandwith.png)
+
+node3
+
+![bandwidth](../../visualization/mp1/assets/8nodes/node3_bandwith.png)
+
+node4
+
+![bandwidth](../../visualization/mp1/assets/8nodes/node4_bandwith.png)
+
+node5
+
+![bandwidth](../../visualization/mp1/assets/8nodes/node5_bandwith.png)
+
+node6
+
+![bandwidth](../../visualization/mp1/assets/8nodes/node6_bandwith.png)
+
+node7
+
+![bandwidth](../../visualization/mp1/assets/8nodes/node7_bandwith.png)
+
+node8
+
+![bandwidth](../../visualization/mp1/assets/8nodes/node8_bandwith.png)
+
+Delay
+
+![delay](../../visualization/mp1/assets/8nodes/delay.png)
 
 ### 3 nodes, 0.5 Hz each, runing for 100 seconds, then one node fails, and the rest continue to run for 100 seconds
 
-![bandwidth](./assets/bandwidth/3_0_5_100s.png)
-![delay](./assets/delay/3_0_5_100s.png)
+A
+
+![bandwidth](../../visualization/mp1/assets/3node_failure/A_bandwith.png)
+
+B
+
+![bandwidth](../../visualization/mp1/assets/3node_failure/B_bandwith.png)
+
+C
+
+![bandwidth](../../visualization/mp1/assets/3node_failure/C_bandwith.png)
+
+Delay
+
+![delay](../../visualization/mp1/assets/3node_failure/delay.png)
+
 ### 8 nodes, 5 Hz each, running for 100 seconds, then 3 nodes fail simultaneously, and the rest continue to run for 100 seconds
 
-![bandwidth](./assets/bandwidth/3_0_5_100s.png)
-![delay](./assets/delay/3_0_5_100s.png)
+node1
+
+![bandwidth](../../visualization/mp1/assets/8nodes_failture/node1_bandwith.png)
+
+node2
+
+![bandwidth](../../visualization/mp1/assets/8nodes_failture/node2_bandwith.png)
+
+node3
+
+![bandwidth](../../visualization/mp1/assets/8nodes_failture/node3_bandwith.png)
+
+node4
+
+![bandwidth](../../visualization/mp1/assets/8nodes_failture/node4_bandwith.png)
+
+node5
+
+![bandwidth](../../visualization/mp1/assets/8nodes_failture/node5_bandwith.png)
+
+node6
+
+![bandwidth](../../visualization/mp1/assets/8nodes_failture/node6_bandwith.png)
+
+node7
+
+![bandwidth](../../visualization/mp1/assets/8nodes_failture/node7_bandwith.png)
+
+node8
+
+![bandwidth](../../visualization/mp1/assets/8nodes_failture/node8_bandwith.png)
+
+Delay
+
+![delay](../../visualization/mp1/assets/8nodes_failture/delay.png)

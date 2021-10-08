@@ -1,6 +1,23 @@
-# MP1
+# MP1 Report
 
-## Build and Run
+---
+
+- Zonglin Peng (zonglin7)
+- Huiming Sun (huiming5)
+
+---
+
+The cluster number we are working on is `g03`
+
+[GitHub Link](https://github.com/cs425-ece428/mp1-monad-mp1)
+[https://github.com/cs425-ece428/mp1-monad-mp1](https://github.com/cs425-ece428/mp1-monad-mp1)
+
+```bash
+ssh your_netid@cs425-gXX-YY.cs.illinois.edu
+ssh your_netid@fa21-cs425-gXX-YY.cs.illinois.edu
+```
+
+## Instructions for building and running
 
 ```bash
 # Quick Build
@@ -42,66 +59,19 @@ python3 -u ./script/unix/mp1/gentx.py 0.5 | LOG=trace ./bin/mp1 B 8081 ./lib/mp1
 python3 -u ./script/unix/mp1/gentx.py 0.5 | LOG=trace ./bin/mp1 C 8082 ./lib/mp1/config/3/config_c.txt 2> /tmp/c.log
 ```
 
-## System Architecture
-
-We use a combination of ISIS algorithm and R-Multicast to ensure reliable Total-Ording.
-Among them, the ISIS algorithm can guarantee Total-Ording, R-Multicast to ensure reliable Multicast.
-In addition, we also assume that once a node loses its TCP connection, it will be evicted from the Group.
-
-![AskSeq](./assets/1.png)
-![ReplySeq](./assets/2.png)
-![AnnounceSeq](./assets/3.png)
-
-### ISIS
-
-[ISIS](https://studylib.net/doc/7830646/isis-algorithm-for-total-ordering-of-messages)
-![ISIS](./assets/ISIS.jpg)
-
-### Node
-
-Each Node is an independent individual that exists in the Group;
-This Node and other Nodes perform full-duplex TCP communication according to the configuration in the configuration file.
-Each Node has a unique Node ID in the Group to indicate the identity of the process.
-
-### Group
-
-Group is a collection of Node. Group encapsulates `Unicast`, `B-Multicast`, `R-Multicast` and `TO-Multicast`.
-
-### Config
-
-Parse the configuration file
-
-### Dispatcher
-
-A simple Router implementation.
-
-### Metrics
-
-Record bandwidth and latency
-
-### Transaction
-
--The logical realization of the transaction
--Analyze transactions
--Register transaction processing function
-
-### Retry
-
--Retry regularly
-
-## Verbose Mode
+### Verbose Mode
 
 ```bash
 LOG=trace
 ```
 
-## JSON Mode
+### JSON Mode
 
 ```bash
 LOG=json
 ```
 
-## Command Line Arguments
+### Command Line Arguments
 
 Each node must take three arguments. The first argument is an identifier that is unique for each node. The second argument is the port number it listens on. The third argument is a configuration file – the first line of the configuration file is the number of other nodes in the system that it must connect to, and each subsequent line contains the identifier, hostname, and the port no. of these nodes. Note the configuration file provided to each node will be different (as it will exclude the identifier, hostname and port of that node). For example, consider a system of three nodes with identifiers node1, node2 and node3, where a node runs on each of the first 3 VMs in your group (say g01), and each node uses port no. 1234. The configuration file provided to node1 should look like this:
 
@@ -128,3 +98,98 @@ Note: make sure your node can run using the EXACT command given below.
 ```bash
 ./mp1_node {node id} {port} {config file}
 ```
+
+## Design Document
+
+We use a combination of ISIS algorithm and R-Multicast to ensure Reliable Total-Ording. The ISIS algorithm can guarantee Total-Ording, R-Multicast to ensure reliable Multicast.
+In addition, we also assume that once a node loses its TCP connection, it will be evicted from the Group (A failed node will not become alive again).
+
+### Proof of correctness
+
+![AskSeq](./assets/1.png)
+![ReplySeq](./assets/2.png)
+![AnnounceSeq](./assets/3.png)
+
+### ISIS
+
+We follow the instructions in the following pseudo code to implement ISIS.
+
+[ISIS](https://studylib.net/doc/7830646/isis-algorithm-for-total-ordering-of-messages)
+![ISIS](./assets/ISIS.jpg)
+
+### Terminology / System Architecture
+
+#### Node
+
+`lib/mp1/multicast`
+
+Each Node is an independent individual that exists in the Group;
+This Node and other Nodes perform full-duplex TCP communication according to the configuration in the configuration file.
+Each Node has a unique Node ID in the Group to indicate the identity of the process.
+
+#### Group
+
+`lib/mp1/multicast`
+
+Group is a collection of Node.
+Group encapsulates `Unicast`, `B-Multicast`, `R-Multicast` and `TO-Multicast`.
+
+#### Config
+
+`lib/mp1/config`
+
+Parse the configuration file format
+
+#### Dispatcher
+
+`lib/mp1/dispatcher`
+
+A simple fully match router implementation.
+
+#### Metrics
+
+- Serialization bandwidth and delay struct
+- Log bandwidth and latency
+
+#### Transaction
+
+- The logical of the transaction
+- Parse transactions raw string
+- Register transaction processing function
+
+#### Retry
+
+`lib/retry`
+
+Retry call f every interval until the maximum number of attempts is reached.
+If the incoming attempts is 0, retry forever
+
+#### Broker
+
+`lib/broker`
+
+A one to many proxy for channel
+
+## Graphs of the Evaluation
+
+![bandwidth](./assets/bandwidth/3_0_5_100s.png)
+![delay](./assets/delay/3_0_5_100s.png)
+
+### 3 nodes, 0.5 Hz each, running for 100 seconds
+
+![bandwidth](./assets/bandwidth/3_0_5_100s.png)
+![delay](./assets/delay/3_0_5_100s.png)
+
+### 8 nodes, 5 Hz each, running for 100 seconds
+
+![bandwidth](./assets/bandwidth/3_0_5_100s.png)
+![delay](./assets/delay/3_0_5_100s.png)
+
+### 3 nodes, 0.5 Hz each, runing for 100 seconds, then one node fails, and the rest continue to run for 100 seconds
+
+![bandwidth](./assets/bandwidth/3_0_5_100s.png)
+![delay](./assets/delay/3_0_5_100s.png)
+### 8 nodes, 5 Hz each, running for 100 seconds, then 3 nodes fail simultaneously, and the rest continue to run for 100 seconds
+
+![bandwidth](./assets/bandwidth/3_0_5_100s.png)
+![delay](./assets/delay/3_0_5_100s.png)

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"encoding/json"
+	"os"
 	"strconv"
 	"time"
 
@@ -15,8 +16,13 @@ var (
 	enableLog       = true
 )
 
-func DisableMetrics() {
-	enableLog = false
+func SetupMetrics() {
+	metricsENV := os.Getenv("METRICS")
+	if metricsENV == "y" {
+		enableLog = true
+	} else {
+		enableLog = false
+	}
 }
 
 type BandwidthLogEntry struct {

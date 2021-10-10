@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	sync "github.com/sasha-s/go-deadlock"
 	"time"
+
+	sync "github.com/sasha-s/go-deadlock"
 )
 
 var counter int32

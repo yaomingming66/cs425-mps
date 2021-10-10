@@ -63,6 +63,11 @@ python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node6 8085 ./lib/mp
 python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node7 8086 ./lib/mp1/config/8/config_7.txt 2> /tmp/7.log
 python3 -u ./script/unix/mp1/gentx.py 5 | LOG=json ./bin/mp1 node8 8087 ./lib/mp1/config/8/config_8.txt 2> /tmp/8.log
 
+# enable metrics
+
+python3 -u ./script/unix/mp1/gentx.py 50 | METRICS=y ./bin/mp1 C 8082 ./lib/mp1/config/3/config_c.txt
+python3 -u ./script/unix/mp1/gentx.py 50 | METRICS=y ./bin/mp1 B 8081 ./lib/mp1/config/3/config_b.txt
+python3 -u ./script/unix/mp1/gentx.py 50 | METRICS=y ./bin/mp1 A 8080 ./lib/mp1/config/3/config_a.txt
 ```
 
 ### Verbose Mode

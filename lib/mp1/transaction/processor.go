@@ -30,7 +30,7 @@ func (p *Processor) processDeposit(msg *multicast.TOMsg) error {
 	}
 
 	// logger.Infof("deposit: %s -> %d", deposit.Account, deposit.Amount)
-	// fmt.Printf("DEPOSIT %s %d\n", deposit.Account, deposit.Amount)
+	fmt.Printf("DEPOSIT %s %d\n", deposit.Account, deposit.Amount)
 	err = p.transaction.Deposit(deposit.Account, deposit.Amount)
 	if err != nil {
 		return errors.Wrap(err, "process deposit failed")

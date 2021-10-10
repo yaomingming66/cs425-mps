@@ -17,6 +17,10 @@ const (
 	AnnounceAgreementSeqPath = "/total-ording/announce-agreement-seq"
 )
 
+const (
+	RetryRemoveMax = 25
+)
+
 type ProposalItem struct {
 	ProposalSeqNum uint64
 	ProcessID      string
@@ -192,11 +196,12 @@ func (t *TotalOrding) bindTODeliver() {
 		defer t.holdQueueLocker.Unlock()
 
 		item := &TOHoldQueueItem{
-			body:           askMsg.Body,
-			proposalSeqNum: proposalSeqNum,
-			msgID:          askMsg.MsgID,
-			processID:      askMsg.SrcID,
-			agreed:         false,
+			body:             askMsg.Body,
+			proposalSeqNum:   proposalSeqNum,
+			msgID:            askMsg.MsgID,
+			processID:        askMsg.SrcID,
+			agreed:           false,
+			retryRemoveCount: 0,
 		}
 		t.holdQueueMap[askMsg.MsgID] = item
 		heap.Push(t.holdQueue, item)
@@ -260,6 +265,9 @@ func (t *TotalOrding) bindTODeliver() {
 					heap.Pop(t.holdQueue)
 					logger.Infof("skip crashed process [%s] msg", item.processID)
 					continue
+					// item.retryRemoveCount += 1
+					// if item.retryRemoveCount >= RetryRemoveMax {
+					// }
 				}
 				break
 			}

@@ -7,12 +7,13 @@ import (
 )
 
 type TOHoldQueueItem struct {
-	body           []byte
-	proposalSeqNum uint64
-	processID      string
-	agreed         bool
-	msgID          string
-	index          int
+	body             []byte
+	proposalSeqNum   uint64
+	processID        string
+	agreed           bool
+	msgID            string
+	retryRemoveCount int
+	index            int
 }
 
 type TOHoldPriorityQueue []*TOHoldQueueItem

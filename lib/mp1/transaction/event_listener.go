@@ -14,7 +14,7 @@ var (
 )
 
 func TransactionEventListenerPipeline(reader io.Reader) <-chan *router.Msg {
-	out := make(chan *router.Msg, 1)
+	out := make(chan *router.Msg, 100000)
 
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)

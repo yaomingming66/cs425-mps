@@ -29,10 +29,15 @@ func NewTCPClient(srcID string, dstID string, addr string, retryInterval time.Du
 		return nil
 	})
 
-	logger.Infof("node [%s] success connect to the server [%s] in [%s]", srcID, dstID, addr)
 	if err != nil {
 		return nil, err
 	}
+
+	logger.Infof("node [%s] success connect to the server [%s] in [%s]", srcID, dstID, addr)
+	tcpConn := connection.(*net.TCPConn)
+
+	tcpConn.SetReadBuffer(5 * MB)
+	tcpConn.SetWriteBuffer(5 * MB)
 
 	hi, _ := types.NewHi(srcID).Encode()
 	hi = append(hi, '\n')

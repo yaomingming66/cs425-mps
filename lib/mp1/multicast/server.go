@@ -22,6 +22,16 @@ const (
 	CONN_TYPE = "tcp"
 )
 
+const (
+	_      = iota // ignore first value by assigning to blank identifier
+	KB int = 1 << (10 * iota)
+	MB
+	GB
+	TB
+	PB
+	EB
+)
+
 func startServer(nodeID string, addr string, router *router.Router) (socket net.Listener, err error) {
 	socket, err = net.Listen(CONN_TYPE, addr)
 
@@ -49,6 +59,10 @@ func runServer(startSyncWaitGroup *sync.WaitGroup, nodeID string, socket net.Lis
 
 func handleConn(startSyncWaitGroup *sync.WaitGroup, nodeID string, conn net.Conn, router *router.Router) {
 	defer conn.Close()
+	tcpConn := conn.(*net.TCPConn)
+
+	tcpConn.SetReadBuffer(5 * MB)
+	tcpConn.SetWriteBuffer(5 * MB)
 
 	scanner := bufio.NewScanner(conn)
 	hi := &types.Hi{}

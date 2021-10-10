@@ -3,10 +3,13 @@ package multicast
 import (
 	"context"
 	"fmt"
-	"sync"
+
+	sync "github.com/sasha-s/go-deadlock"
+
 	"time"
 
 	"github.com/bamboovir/cs425/lib/broker"
+	"github.com/bamboovir/cs425/lib/mp1/router"
 	errors "github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
@@ -14,109 +17,166 @@ import (
 type BMulticast struct {
 	group              *Group
 	memberUpdate       *broker.Broker
-	emitters           map[string]chan []byte
-	emittersLock       *sync.Mutex
-	router             *BDispatcher
-	deliver            chan []byte
+	senders            map[string]*TCPClient
+	senderLock         *sync.Mutex
+	router             *router.Router
 	startSyncWaitGroup *sync.WaitGroup
 }
 
 func NewBMulticast(group *Group) *BMulticast {
-	deliver := make(chan []byte)
-
 	return &BMulticast{
 		memberUpdate:       broker.New(),
 		group:              group,
-		emitters:           map[string]chan []byte{},
-		emittersLock:       &sync.Mutex{},
-		router:             NewBDispatcher(deliver),
-		deliver:            deliver,
+		senders:            map[string]*TCPClient{},
+		senderLock:         &sync.Mutex{},
+		router:             router.New(),
 		startSyncWaitGroup: &sync.WaitGroup{},
 	}
 }
 
-func (b *BMulticast) MemberCount() int {
-	b.emittersLock.Lock()
-	defer b.emittersLock.Unlock()
-	return len(b.emitters)
+const (
+	BMulticastPath = "/b-multicast"
+)
+
+func BMsgDecodeWrapper(f func(*BMsg) error) func(interface{}) error {
+	return func(v interface{}) error {
+		msg := v.(*BMsg)
+		return f(msg)
+	}
 }
 
-func (b *BMulticast) Unicast(dstID string, path string, msg []byte) (err error) {
-	b.emittersLock.Lock()
-	defer b.emittersLock.Unlock()
+func (b *BMulticast) Bind(path string, f func(msg *BMsg) error) {
+	b.router.Bind(path, BMsgDecodeWrapper(f))
+}
 
-	emitter, ok := b.emitters[dstID]
+func (b *BMulticast) AddMember(nodeID string, client *TCPClient) {
+	b.senderLock.Lock()
+	defer b.senderLock.Unlock()
+	b.senders[nodeID] = client
+}
+
+func (b *BMulticast) MemberCount() int {
+	b.senderLock.Lock()
+	defer b.senderLock.Unlock()
+	return len(b.senders)
+}
+
+func (b *BMulticast) IsNodeAlived(nodeID string) bool {
+	b.senderLock.Lock()
+	defer b.senderLock.Unlock()
+	_, ok := b.senders[nodeID]
+	return ok
+}
+
+func (b *BMulticast) Unicast(dstID string, path string, v interface{}) (err error) {
+	b.senderLock.Lock()
+	defer b.senderLock.Unlock()
+	sender, ok := b.senders[dstID]
+
 	if !ok {
-		errmsg := fmt.Sprintf("dst node id [%s] emitter not exists, unicast failed", dstID)
+		errmsg := fmt.Sprintf("dst node id [%s] sender not exists, unicast failed", dstID)
 		return fmt.Errorf(errmsg)
 	}
-	bmsg := BMsg{
-		SrcID: b.group.SelfNodeID,
-		Path:  path,
-		Body:  msg,
-	}
-	bmsgBytes, err := bmsg.Encode()
+
+	bmsg, err := NewBMsg(b.group.SelfNodeID, path, v)
+
 	if err != nil {
-		return errors.Wrap(err, "unicast failed")
+		return errors.Wrap(err, "b-unicast failed")
 	}
-	emitter <- bmsgBytes
+
+	bmsgBytes, err := bmsg.Encode()
+
+	if err != nil {
+		return errors.Wrap(err, "b-unicast failed")
+	}
+
+	err = sender.Send(bmsgBytes)
+	if err != nil {
+		logger.Errorf("client lost connection, write error: %v", err)
+		logger.Infof("eject node [%s] from group", dstID)
+		sender.Close()
+		delete(b.senders, dstID)
+		b.memberUpdate.Publish(len(b.senders))
+		return errors.Wrap(err, "b-unicast failed")
+	}
 	return nil
 }
 
-func (b *BMulticast) Multicast(path string, msg []byte) (err error) {
-	b.emittersLock.Lock()
-	defer b.emittersLock.Unlock()
-	bmsg := BMsg{
-		SrcID: b.group.SelfNodeID,
-		Path:  path,
-		Body:  msg,
-	}
-	bmsgBytes, err := bmsg.Encode()
+func (b *BMulticast) Multicast(path string, v interface{}) (err error) {
+	b.senderLock.Lock()
+	defer b.senderLock.Unlock()
+
+	bmsg, err := NewBMsg(b.group.SelfNodeID, path, v)
+
 	if err != nil {
 		return errors.Wrap(err, "b-multicast failed")
 	}
-	for _, emitter := range b.emitters {
-		emitter <- bmsgBytes
+
+	bmsgBytes, err := bmsg.Encode()
+
+	if err != nil {
+		return errors.Wrap(err, "b-multicast failed")
+	}
+
+	for dstID, sender := range b.senders {
+		err = sender.Send(bmsgBytes)
+		if err != nil {
+			logger.Errorf("client lost connection, write error: %v", err)
+			logger.Infof("eject node [%s] from group", dstID)
+			sender.Close()
+			delete(b.senders, dstID)
+			b.memberUpdate.Publish(len(b.senders))
+			return errors.Wrap(err, "b-multicast failed")
+		}
 	}
 	return nil
 }
 
-func (b *BMulticast) Router() *BDispatcher {
-	return b.router
-}
-
 func (b *BMulticast) startServer() (err error) {
-	return runServer(
+	for range b.group.members {
+		b.startSyncWaitGroup.Add(1)
+	}
+
+	socket, err := startServer(
 		b.group.SelfNodeID,
 		b.group.SelfNodeAddr,
-		b.deliver,
+		b.router,
 	)
+
+	if err != nil {
+		return err
+	}
+
+	go runServer(
+		b.startSyncWaitGroup,
+		b.group.SelfNodeID,
+		socket,
+		b.router,
+	)
+
+	return nil
 }
 
-// TODO: Config Emitter Buffer Size
-// TODO: Config Client reconnect interval
-func (b *BMulticast) startClients() {
+func (b *BMulticast) startClients() (err error) {
 	for _, m := range b.group.members {
-		b.startSyncWaitGroup.Add(1)
-		emitter := make(chan []byte)
-		b.emitters[m.ID] = emitter
-		go b.startClient(m.ID, m.Addr, emitter, 5*time.Second)
+		err = b.startClient(m.ID, m.Addr, 5*time.Second)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (b *BMulticast) startClient(
 	dstNodeID string,
 	addr string,
-	emitter chan []byte,
 	retryInterval time.Duration,
 ) (err error) {
-	err = b.runClient(b.group.SelfNodeID, dstNodeID, addr, emitter, retryInterval)
-	logger.Infof("eject node [%s] from group", dstNodeID)
-	b.emittersLock.Lock()
-	defer b.emittersLock.Unlock()
-	delete(b.emitters, dstNodeID)
-	b.memberUpdate.Publish(len(b.emitters))
+	client, err := NewTCPClient(b.group.SelfNodeID, dstNodeID, addr, 5*time.Second)
+	b.AddMember(dstNodeID, client)
+	b.startSyncWaitGroup.Done()
 	if err != nil {
+		logger.Errorf("init tcp client failed: %v", err)
 		return err
 	}
 	return nil
@@ -126,7 +186,15 @@ func (b *BMulticast) MembersUpdate() chan interface{} {
 	return b.memberUpdate.Subscribe()
 }
 
+func (b *BMulticast) bindBDeliver() {
+	b.router.Bind(BMulticastPath, func(v interface{}) error {
+		msg := v.(*BMsg)
+		return b.router.Run(msg.Path, msg)
+	})
+}
+
 func (b *BMulticast) Start(ctx context.Context) (err error) {
+	b.bindBDeliver()
 	go b.memberUpdate.Start()
 
 	errGroup, _ := errgroup.WithContext(ctx)
@@ -136,28 +204,13 @@ func (b *BMulticast) Start(ctx context.Context) (err error) {
 		},
 	)
 
-	b.startClients()
+	errGroup.Go(
+		func() error {
+			return b.startClients()
+		},
+	)
 
-	serverChan := make(chan error)
-	clientChan := make(chan struct{})
-
-	go func() {
-		b.startSyncWaitGroup.Wait()
-		clientChan <- struct{}{}
-	}()
-
-	go func() {
-		err := errGroup.Wait()
-		if err != nil {
-			serverChan <- err
-		}
-	}()
-
-	select {
-	case err := <-serverChan:
-		return err
-	case <-clientChan:
-		time.Sleep(5 * time.Second)
-	}
-	return nil
+	err = errGroup.Wait()
+	time.Sleep(time.Second * 5)
+	return err
 }

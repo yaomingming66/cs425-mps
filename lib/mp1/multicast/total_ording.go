@@ -3,9 +3,11 @@ package multicast
 import (
 	"container/heap"
 	"context"
-	"sync"
+
+	sync "github.com/sasha-s/go-deadlock"
 
 	"github.com/bamboovir/cs425/lib/mp1/metrics"
+	"github.com/bamboovir/cs425/lib/mp1/router"
 	errors "github.com/pkg/errors"
 )
 
@@ -19,65 +21,55 @@ type ProposalItem struct {
 	ProposalSeqNum uint64
 	ProcessID      string
 	MsgID          string
-}
-
-type MsgItem struct {
-	Body            []byte
-	ProposalSeqNum  uint64
-	ProcessID       string
-	AgreementSeqNum uint64
-	Agreed          bool
+	Body           []byte
 }
 
 type TotalOrding struct {
 	bmulticast                      *BMulticast
 	rmulticast                      *RMulticast
+	router                          *router.Router
 	holdQueueMap                    map[string]*TOHoldQueueItem
 	holdQueue                       *TOHoldPriorityQueue
 	holdQueueLocker                 *sync.Mutex
-	router                          *TODispatcher
 	maxAgreementSeqNumOfGroup       uint64
 	maxAgreementSeqNumOfGroupLocker *sync.Mutex
 	maxProposalSeqNumOfSelf         uint64
 	maxProposalSeqNumOfSelfLocker   *sync.Mutex
-	deliver                         chan []byte
-	waitProposalCounter             map[string]chan ProposalItem
+	waitProposalCounter             map[string][]*ProposalItem
 	waitProposalCounterLock         *sync.Mutex
-	msgItems                        map[string]*MsgItem
-	msgItemsLock                    *sync.Mutex
+	waitVotesChannel                chan *ProposalItem
 }
 
 func NewTotalOrder(b *BMulticast, r *RMulticast) *TotalOrding {
-	deliver := make(chan []byte)
 	holdQueue := &TOHoldPriorityQueue{}
 	heap.Init(holdQueue)
 
 	return &TotalOrding{
 		bmulticast:                      b,
 		rmulticast:                      r,
-		deliver:                         deliver,
+		router:                          router.New(),
 		holdQueueMap:                    map[string]*TOHoldQueueItem{},
 		holdQueue:                       holdQueue,
 		holdQueueLocker:                 &sync.Mutex{},
-		router:                          NewTODispatcher(deliver),
 		maxAgreementSeqNumOfGroup:       0,
 		maxAgreementSeqNumOfGroupLocker: &sync.Mutex{},
 		maxProposalSeqNumOfSelf:         0,
 		maxProposalSeqNumOfSelfLocker:   &sync.Mutex{},
-		waitProposalCounter:             map[string]chan ProposalItem{},
+		waitProposalCounter:             map[string][]*ProposalItem{},
 		waitProposalCounterLock:         &sync.Mutex{},
-		msgItems:                        map[string]*MsgItem{},
-		msgItemsLock:                    &sync.Mutex{},
+		waitVotesChannel:                make(chan *ProposalItem, 10000),
 	}
 }
 
 func (t *TotalOrding) Start(ctx context.Context) (err error) {
 	t.bindTODeliver()
-	return t.rmulticast.Start(ctx)
-}
-
-func (t *TotalOrding) Router() *TODispatcher {
-	return t.router
+	err = t.rmulticast.Start(ctx)
+	if err != nil {
+		return err
+	}
+	memberUpdateChannel := t.bmulticast.MembersUpdate()
+	go t.collectVotes(memberUpdateChannel)
+	return nil
 }
 
 func (t *TotalOrding) aggregateVotesAndMulticast(votes []*ProposalItem) error {
@@ -92,13 +84,8 @@ func (t *TotalOrding) aggregateVotesAndMulticast(votes []*ProposalItem) error {
 		agreementSeqItem.MsgID,
 	)
 
-	announceAgreementMsgBytes, err := announceAgreementMsg.Encode()
-	if err != nil {
-		return err
-	}
-
-	// logger.Errorf("announce %s %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
-	err = t.rmulticast.Multicast(AnnounceAgreementSeqPath, announceAgreementMsgBytes)
+	logger.Infof("announce %s %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
+	err = t.rmulticast.Multicast(AnnounceAgreementSeqPath, announceAgreementMsg)
 	if err != nil {
 		return err
 	}
@@ -106,61 +93,76 @@ func (t *TotalOrding) aggregateVotesAndMulticast(votes []*ProposalItem) error {
 	return nil
 }
 
-func (t *TotalOrding) Multicast(path string, msg []byte) (err error) {
-	tomsg := NewTOMsg(path, msg)
+func (t *TotalOrding) collectVotes(memberUpdateChannel chan interface{}) {
+	for {
+		select {
+		case vote := <-t.waitVotesChannel:
+			logger.Errorf("get vote: [%s]", vote.MsgID)
+			_, ok := t.waitProposalCounter[vote.MsgID]
+			if !ok {
+				t.waitProposalCounter[vote.MsgID] = []*ProposalItem{}
+			}
+
+			votes := t.waitProposalCounter[vote.MsgID]
+			membersCount := t.bmulticast.MemberCount()
+
+			votes = append(votes, vote)
+
+			logger.Errorf("curr vote: [%d]", len(votes))
+			if len(votes) < membersCount {
+				continue
+			}
+
+			err := t.aggregateVotesAndMulticast(votes)
+			if err != nil {
+				logger.Errorf("aggregate votes and multicast failed for msg [%s]: %v", vote.MsgID, err)
+			}
+		case membersCountI := <-memberUpdateChannel:
+			var membersCount int
+			switch t := membersCountI.(type) {
+			case int:
+				membersCount = t
+			default:
+				membersCount = -1
+			}
+
+			logger.Infof("members count update to %d, re-check vote count", membersCount)
+			for msgID, votes := range t.waitProposalCounter {
+				if len(votes) < membersCount {
+					continue
+				}
+				err := t.aggregateVotesAndMulticast(votes)
+				if err != nil {
+					logger.Errorf("aggregate votes and multicast failed for msg [%s]: %v", msgID, err)
+				}
+			}
+		}
+	}
+}
+
+func TOMsgDecodeWrapper(f func(*TOMsg) error) func(interface{}) error {
+	return func(v interface{}) error {
+		msg := v.(*TOMsg)
+		return f(msg)
+	}
+}
+
+func (r *TotalOrding) Bind(path string, f func(msg *TOMsg) error) {
+	r.router.Bind(path, TOMsgDecodeWrapper(f))
+}
+
+func (t *TotalOrding) Multicast(path string, v interface{}) (err error) {
+	tomsg, err := NewTOMsg(path, v)
+	if err != nil {
+		return errors.Wrap(err, "to-multicast failed")
+	}
 	tomsgBytes, err := tomsg.Encode()
 	if err != nil {
 		return errors.Wrap(err, "to-multicast failed")
 	}
 	askMsg := NewTOAskProposalSeqMsg(t.bmulticast.group.SelfNodeID, tomsgBytes)
-	askMsgBytes, err := askMsg.Encode()
-	if err != nil {
-		return errors.Wrap(err, "to-multicast failed")
-	}
-	waitCounterChannel := make(chan ProposalItem)
 
-	t.waitProposalCounterLock.Lock()
-	defer t.waitProposalCounterLock.Unlock()
-
-	t.waitProposalCounter[askMsg.MsgID] = waitCounterChannel
-
-	go func() {
-		votes := make([]*ProposalItem, 0)
-		memberUpdateNotification := t.bmulticast.MembersUpdate()
-
-		for {
-			select {
-			case membersCountI := <-memberUpdateNotification:
-				var membersCount int
-
-				switch t := membersCountI.(type) {
-				case int:
-					membersCount = t
-				default:
-					membersCount = -1
-				}
-
-				if len(votes) < membersCount {
-					continue
-				}
-
-				t.aggregateVotesAndMulticast(votes)
-				return
-			case vote := <-waitCounterChannel:
-				votes = append(votes, &vote)
-
-				membersCount := t.bmulticast.MemberCount()
-				if len(votes) < membersCount {
-					continue
-				}
-
-				t.aggregateVotesAndMulticast(votes)
-				return
-			}
-		}
-	}()
-
-	err = t.rmulticast.Multicast(AskProposalSeqPath, askMsgBytes)
+	err = t.rmulticast.Multicast(AskProposalSeqPath, askMsg)
 	if err != nil {
 		return errors.Wrap(err, "to-multicast failed")
 	}
@@ -168,40 +170,29 @@ func (t *TotalOrding) Multicast(path string, msg []byte) (err error) {
 }
 
 func (t *TotalOrding) bindTODeliver() {
-	rRouter := t.rmulticast.Router()
-	bRouter := t.bmulticast.Router()
+	rRouter := t.rmulticast
+	bRouter := t.bmulticast
 
-	rRouter.Bind(AskProposalSeqPath, func(msg RMsg) {
+	rRouter.Bind(AskProposalSeqPath, func(msg *RMsg) error {
 		askMsg := &TOAskProposalSeqMsg{}
 		_, err := askMsg.Decode(msg.Body)
 		if err != nil {
-			logger.Errorf("%v", err)
-			return
+			return errors.Wrap(err, "ask-proposal-seq failed")
 		}
 
 		t.maxAgreementSeqNumOfGroupLocker.Lock()
-		defer t.maxAgreementSeqNumOfGroupLocker.Unlock()
 		t.maxProposalSeqNumOfSelfLocker.Lock()
-		defer t.maxProposalSeqNumOfSelfLocker.Unlock()
 
 		proposalSeqNum := MaxUint64(t.maxAgreementSeqNumOfGroup, t.maxProposalSeqNumOfSelf) + 1
 		t.maxProposalSeqNumOfSelf = proposalSeqNum
-
-		t.msgItemsLock.Lock()
-		defer t.msgItemsLock.Unlock()
-
-		t.msgItems[askMsg.MsgID] = &MsgItem{
-			ProposalSeqNum:  proposalSeqNum,
-			Body:            askMsg.Body,
-			ProcessID:       askMsg.SrcID,
-			AgreementSeqNum: 0,
-			Agreed:          false,
-		}
+		t.maxAgreementSeqNumOfGroupLocker.Unlock()
+		t.maxProposalSeqNumOfSelfLocker.Unlock()
 
 		t.holdQueueLocker.Lock()
 		defer t.holdQueueLocker.Unlock()
 
 		item := &TOHoldQueueItem{
+			body:           askMsg.Body,
 			proposalSeqNum: proposalSeqNum,
 			msgID:          askMsg.MsgID,
 			processID:      askMsg.SrcID,
@@ -210,68 +201,43 @@ func (t *TotalOrding) bindTODeliver() {
 		t.holdQueueMap[askMsg.MsgID] = item
 		heap.Push(t.holdQueue, item)
 
+		logger.Errorf("send proposal seq [%s] [%d] to [%s]", askMsg.MsgID, proposalSeqNum, askMsg.SrcID)
 		replyProposalMsg := NewTOReplyProposalSeqMsg(t.bmulticast.group.SelfNodeID, askMsg.MsgID, proposalSeqNum)
-		replyProposalMsgBytes, err := replyProposalMsg.Encode()
+		err = t.bmulticast.Unicast(askMsg.SrcID, WaitProposalSeqPath, replyProposalMsg)
 		if err != nil {
-			logger.Errorf("%v", err)
-			return
+			return errors.Wrap(err, "ask-proposal-seq failed")
 		}
-		err = t.bmulticast.Unicast(askMsg.SrcID, WaitProposalSeqPath, replyProposalMsgBytes)
-		if err != nil {
-			logger.Errorf("%v", err)
-			return
-		}
+		return nil
 	})
 
-	bRouter.Bind(WaitProposalSeqPath, func(msg BMsg) {
+	bRouter.Bind(WaitProposalSeqPath, func(msg *BMsg) error {
 		replyProposalMsg := &TOReplyProposalSeqMsg{}
 		_, err := replyProposalMsg.Decode(msg.Body)
 		if err != nil {
-			logger.Errorf("%v", err)
-			return
+			return errors.Wrap(err, "wait-proposal-seq failed")
 		}
-
-		t.waitProposalCounterLock.Lock()
-		defer t.waitProposalCounterLock.Unlock()
-
-		waitCounterChannel, ok := t.waitProposalCounter[replyProposalMsg.MsgID]
-
-		if !ok {
-			logger.Errorf("to msg id not exist")
-			return
-		}
-
-		waitCounterChannel <- ProposalItem{
+		// logger.Infof("get proposal seq: %s", replyProposalMsg.MsgID)
+		t.waitVotesChannel <- &ProposalItem{
 			ProposalSeqNum: replyProposalMsg.ProposalSeq,
 			ProcessID:      replyProposalMsg.ProcessID,
 			MsgID:          replyProposalMsg.MsgID,
 		}
+
+		return nil
 	})
 
-	rRouter.Bind(AnnounceAgreementSeqPath, func(msg RMsg) {
+	rRouter.Bind(AnnounceAgreementSeqPath, func(msg *RMsg) error {
 		announceAgreementMsg := &TOAnnounceAgreementSeqMsg{}
 		_, err := announceAgreementMsg.Decode(msg.Body)
 		if err != nil {
-			logger.Errorf("%v", err)
-			return
+			return errors.Wrap(err, "announce-agreement-seq failed")
 		}
 
-		// logger.Errorf("get announce %s -> %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
+		logger.Infof("get announce [%d:%s] %s", announceAgreementMsg.AgreementSeq, announceAgreementMsg.ProcessID, announceAgreementMsg.MsgID)
 
 		t.maxAgreementSeqNumOfGroupLocker.Lock()
-		defer t.maxAgreementSeqNumOfGroupLocker.Unlock()
-		t.msgItemsLock.Lock()
-		defer t.msgItemsLock.Unlock()
-
 		t.maxAgreementSeqNumOfGroup = MaxUint64(t.maxAgreementSeqNumOfGroup, announceAgreementMsg.AgreementSeq)
-
-		msgItem, ok := t.msgItems[announceAgreementMsg.MsgID]
-		if !ok {
-			logger.Errorf("msg id [%s] not exist in msg item map", announceAgreementMsg.MsgID)
-			return
-		}
-		msgItem.AgreementSeqNum = announceAgreementMsg.AgreementSeq
-		msgItem.Agreed = true
+		t.maxAgreementSeqNumOfGroupLocker.Unlock()
 
 		t.holdQueueLocker.Lock()
 		defer t.holdQueueLocker.Unlock()
@@ -279,35 +245,38 @@ func (t *TotalOrding) bindTODeliver() {
 		item, ok := t.holdQueueMap[announceAgreementMsg.MsgID]
 		if !ok {
 			logger.Errorf("msg id [%s] not exist in hold queue map", announceAgreementMsg.MsgID)
-			return
+			return errors.New("announce-agreement-seq failed")
 		}
 
-		t.holdQueue.Update(item, announceAgreementMsg.AgreementSeq, announceAgreementMsg.ProcessID, true)
-
-		t.bmulticast.emittersLock.Lock()
-		defer t.bmulticast.emittersLock.Unlock()
+		t.holdQueue.Update(item, announceAgreementMsg.ProcessID, announceAgreementMsg.AgreementSeq)
 
 		for t.holdQueue.Len() > 0 {
+			logger.Infof("hold queue %s", t.holdQueue.Snapshot())
 			item := t.holdQueue.Peek().(*TOHoldQueueItem)
-			_, ok := t.bmulticast.emitters[item.processID]
+			ok := t.bmulticast.IsNodeAlived(item.processID)
 			if !ok {
-				delete(t.msgItems, item.msgID)
 				delete(t.holdQueueMap, item.msgID)
 				heap.Pop(t.holdQueue)
 				logger.Infof("skip crashed process [%s] msg", item.processID)
 				continue
 			}
-			msg, ok := t.msgItems[item.msgID]
-			if !ok || !msg.Agreed {
+			if !item.agreed {
 				break
 			}
 			logger.Infof("TO deliver [%d:%s][%s]", item.proposalSeqNum, item.processID, item.msgID)
+			// fmt.Printf("TO deliver [%d:%s][%s]\n", item.proposalSeqNum, item.processID, item.msgID)
 			metrics.NewDelayLogEntry(t.bmulticast.group.SelfNodeID, item.msgID).Log()
-			msgBody := msg.Body
-			t.deliver <- msgBody
-			delete(t.msgItems, item.msgID)
 			delete(t.holdQueueMap, item.msgID)
 			heap.Pop(t.holdQueue)
+			tomsg := &TOMsg{}
+			_, err = tomsg.Decode(item.body)
+			if err != nil {
+				return errors.Wrap(err, "announce-agreement-seq failed")
+			}
+			err = t.router.Run(tomsg.Path, tomsg)
+			return err
 		}
+
+		return nil
 	})
 }

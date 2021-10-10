@@ -12,7 +12,12 @@ var (
 	logger          = log.WithField("src", "metrics")
 	bandwidthLogger = log.WithField("src", "metrics.bandwidth")
 	delayLogger     = log.WithField("src", "metrics.delay")
+	enableLog       = true
 )
+
+func DisableMetrics() {
+	enableLog = false
+}
 
 type BandwidthLogEntry struct {
 	NodeID    string `json:"node_id"`
@@ -54,7 +59,9 @@ func (b *BandwidthLogEntry) Log() {
 		return
 	}
 
-	bandwidthLogger.Infof(string(encoded))
+	if enableLog {
+		bandwidthLogger.Infof(string(encoded))
+	}
 }
 
 func NewDelayLogEntry(nodeID string, msgID string) *DelayLogEntry {
@@ -80,5 +87,7 @@ func (d *DelayLogEntry) Log() {
 		return
 	}
 
-	delayLogger.Infof(string(encoded))
+	if enableLog {
+		delayLogger.Infof(string(encoded))
+	}
 }

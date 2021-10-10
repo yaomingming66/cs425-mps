@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bamboovir/cs425/lib/mp1/dispatcher"
+	"github.com/bamboovir/cs425/lib/mp1/router"
 )
 
 const (
@@ -64,7 +64,7 @@ const (
 	TransferPath       = "/transaction/transfer"
 )
 
-func EncodeTransactionsMsg(msg string) (dmsg *dispatcher.Msg, err error) {
+func EncodeTransactionsMsg(msg string) (dmsg *router.Msg, err error) {
 	fields := strings.Fields(msg)
 	if len(fields) == 0 {
 		errMsg := "invalid event format, empty fields"
@@ -90,10 +90,7 @@ func EncodeTransactionsMsg(msg string) (dmsg *dispatcher.Msg, err error) {
 			Amount:  amount,
 		}
 
-		dmsg, err := dispatcher.NewMsg(DepositPath, deposit)
-		if err != nil {
-			return nil, err
-		}
+		dmsg := router.NewMsg(DepositPath, deposit)
 
 		return dmsg, nil
 	case TransferEvent:
@@ -113,10 +110,7 @@ func EncodeTransactionsMsg(msg string) (dmsg *dispatcher.Msg, err error) {
 			Amount:      amount,
 		}
 
-		dmsg, err := dispatcher.NewMsg(TransferPath, transfer)
-		if err != nil {
-			return nil, err
-		}
+		dmsg := router.NewMsg(TransferPath, transfer)
 
 		return dmsg, nil
 	default:

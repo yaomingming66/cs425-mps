@@ -1,8 +1,13 @@
 package multicast
 
-import "container/heap"
+import (
+	"container/heap"
+	"fmt"
+	"strings"
+)
 
 type TOHoldQueueItem struct {
+	body           []byte
 	proposalSeqNum uint64
 	processID      string
 	agreed         bool
@@ -11,6 +16,18 @@ type TOHoldQueueItem struct {
 }
 
 type TOHoldPriorityQueue []*TOHoldQueueItem
+
+func (pq TOHoldPriorityQueue) Snapshot() string {
+	builder := strings.Builder{}
+	for i, item := range pq {
+		if i == 10 {
+			break
+		}
+		record := fmt.Sprintf("[%d:%s] %t %s %d\n", item.proposalSeqNum, item.processID, item.agreed, item.msgID, item.index)
+		builder.WriteString(record)
+	}
+	return builder.String()
+}
 
 func (pq TOHoldPriorityQueue) Len() int { return len(pq) }
 
@@ -58,9 +75,9 @@ func (pq *TOHoldPriorityQueue) Peek() interface{} {
 	return old[0]
 }
 
-func (pq *TOHoldPriorityQueue) Update(item *TOHoldQueueItem, proposalSeqNum uint64, processID string, agreed bool) {
-	item.proposalSeqNum = proposalSeqNum
+func (pq *TOHoldPriorityQueue) Update(item *TOHoldQueueItem, processID string, seqNum uint64) {
+	item.agreed = true
 	item.processID = processID
-	item.agreed = agreed
+	item.proposalSeqNum = seqNum
 	heap.Fix(pq, item.index)
 }

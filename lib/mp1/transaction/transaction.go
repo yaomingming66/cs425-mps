@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
+
+	sync "github.com/sasha-s/go-deadlock"
 
 	log "github.com/sirupsen/logrus"
 )

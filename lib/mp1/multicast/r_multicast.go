@@ -2,86 +2,97 @@ package multicast
 
 import (
 	"context"
-	"sync"
+
+	"github.com/bamboovir/cs425/lib/mp1/router"
+	sync "github.com/sasha-s/go-deadlock"
 
 	errors "github.com/pkg/errors"
 )
 
 const (
-	RMultiCastPath = "/r-multicast"
+	RMulticastPath = "/r-multicast"
 )
 
 type RMulticast struct {
 	bmulticast   *BMulticast
 	received     map[string]struct{}
 	receivedLock *sync.Mutex
-	router       *RDispatcher
-	deliver      chan []byte
+	router       *router.Router
 }
 
 func NewRMulticast(b *BMulticast) *RMulticast {
-	deliver := make(chan []byte)
 
 	return &RMulticast{
 		bmulticast:   b,
 		received:     map[string]struct{}{},
 		receivedLock: &sync.Mutex{},
-		router:       NewRDispatcher(deliver),
-		deliver:      deliver,
+		router:       router.New(),
 	}
 }
 
-func (r *RMulticast) Multicast(path string, msg []byte) (err error) {
-	rmsg := NewRMsg(path, msg)
-	rmsgBytes, err := rmsg.Encode()
+func (r *RMulticast) AddMsgIfNotExist(msgID string) bool {
+	r.receivedLock.Lock()
+	defer r.receivedLock.Unlock()
+	_, ok := r.received[msgID]
+	if !ok {
+		r.received[msgID] = struct{}{}
+		return true
+	}
+	return false
+}
+
+func (r *RMulticast) Multicast(path string, v interface{}) (err error) {
+	rmsg, err := NewRMsg(path, v)
+
 	if err != nil {
 		return errors.Wrap(err, "r-multicast failed")
 	}
-	err = r.bmulticast.Multicast(RMultiCastPath, rmsgBytes)
+
+	err = r.bmulticast.Multicast(RMulticastPath, rmsg)
 	if err != nil {
 		return errors.Wrap(err, "r-multicast failed")
 	}
+
 	return nil
 }
 
+func RMsgDecodeWrapper(f func(*RMsg) error) func(interface{}) error {
+	return func(v interface{}) error {
+		msg := v.(*RMsg)
+		return f(msg)
+	}
+}
+
+func (r *RMulticast) Bind(path string, f func(msg *RMsg) error) {
+	r.router.Bind(path, RMsgDecodeWrapper(f))
+}
+
 func (r *RMulticast) bindRDeliver() {
-	r.bmulticast.router.Bind(RMultiCastPath, func(msg BMsg) {
+	r.bmulticast.Bind(RMulticastPath, func(msg *BMsg) error {
 		rmsg := &RMsg{}
 		_, err := rmsg.Decode(msg.Body)
 		if err != nil {
-			logger.Errorf("decode r message failed: %v", err)
-			return
+			return errors.Wrap(err, "r-deliver failed")
 		}
-		r.receivedLock.Lock()
-		defer r.receivedLock.Unlock()
-		_, ok := r.received[rmsg.ID]
-		if !ok {
-			r.received[rmsg.ID] = struct{}{}
+		ok := r.AddMsgIfNotExist(rmsg.ID)
+		if ok {
 			if msg.SrcID != r.bmulticast.group.SelfNodeID {
 				rmsgCopy := &RMsg{
 					ID:   rmsg.ID,
 					Path: rmsg.Path,
 					Body: rmsg.Body,
 				}
-				rmsgBytes, err := rmsgCopy.Encode()
-				if err != nil {
-					logger.Errorf("encode r message failed: %v", err)
-					return
-				}
-				err = r.bmulticast.Multicast(RMultiCastPath, rmsgBytes)
+				err = r.bmulticast.Multicast(RMulticastPath, rmsgCopy)
 
 				if err != nil {
-					logger.Errorf("b-multicast message failed: %v", err)
-					return
+					return errors.Wrap(err, "r-deliver failed")
 				}
 			}
-			r.deliver <- msg.Body
+			return r.router.Run(rmsg.Path, rmsg)
 		}
-	})
-}
-
-func (r *RMulticast) Router() *RDispatcher {
-	return r.router
+		return nil
+	},
+	)
 }
 
 func (r *RMulticast) Start(ctx context.Context) (err error) {

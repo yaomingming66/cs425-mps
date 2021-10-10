@@ -1,7 +1,7 @@
 package multicast
 
 import (
-	"sync"
+	sync "github.com/sasha-s/go-deadlock"
 )
 
 type GroupBuilder struct {
@@ -37,10 +37,14 @@ func (g *GroupBuilder) WithMembers(members []Node) *GroupBuilder {
 }
 
 func (g *GroupBuilder) Build() *Group {
-	return &Group{
+	group := &Group{
 		SelfNodeID:   g.SelfNodeID,
 		SelfNodeAddr: g.SelfNodeAddr,
 		members:      g.Memebers,
 		membersLock:  &sync.Mutex{},
 	}
+	group.bmulticast = NewBMulticast(group)
+	group.rmulticast = NewRMulticast(group.bmulticast)
+	group.totalOrder = NewTotalOrder(group.bmulticast, group.rmulticast)
+	return group
 }

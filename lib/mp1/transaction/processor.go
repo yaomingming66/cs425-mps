@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/bamboovir/cs425/lib/mp1/multicast"
+	"github.com/pkg/errors"
 )
 
 type Processor struct {
@@ -16,53 +17,45 @@ func NewProcessor() *Processor {
 	}
 }
 
-func toProcessWrapper(f func(msg []byte)) func(msg multicast.TOMsg) {
-	return func(msg multicast.TOMsg) {
-		f(msg.Body)
-	}
+func (p *Processor) RegisteTransactionHandler(d *multicast.TotalOrding) {
+	d.Bind(DepositPath, p.processDeposit)
+	d.Bind(TransferPath, p.processTransfer)
 }
 
-func (p *Processor) RegisteTransactionHandler(d *multicast.TODispatcher) {
-	d.Bind(DepositPath, toProcessWrapper(p.processDeposit))
-	d.Bind(TransferPath, toProcessWrapper(p.processTransfer))
-}
-
-func (p *Processor) processDeposit(msg []byte) {
+func (p *Processor) processDeposit(msg *multicast.TOMsg) error {
 	deposit := &Deposit{}
-	_, err := deposit.Decode(msg)
+	_, err := deposit.Decode(msg.Body)
 	if err != nil {
-		logger.Errorf("deposit err: %v", err)
-		return
+		return errors.Wrap(err, "process deposit failed")
 	}
 
-	logger.Infof("deposit: %s -> %d", deposit.Account, deposit.Amount)
-	fmt.Printf("DEPOSIT %s %d\n", deposit.Account, deposit.Amount)
+	// logger.Infof("deposit: %s -> %d", deposit.Account, deposit.Amount)
+	// fmt.Printf("DEPOSIT %s %d\n", deposit.Account, deposit.Amount)
 	err = p.transaction.Deposit(deposit.Account, deposit.Amount)
 	if err != nil {
-		logger.Errorf("deposit err: %v", err)
-		return
+		return errors.Wrap(err, "process deposit failed")
 	}
 	snapshot := p.transaction.BalancesSnapshotStdSortedString()
-	logger.Info(snapshot)
+	// logger.Info(snapshot)
 	fmt.Printf("%s\n", snapshot)
+	return nil
 }
 
-func (p *Processor) processTransfer(msg []byte) {
+func (p *Processor) processTransfer(msg *multicast.TOMsg) error {
 	transfer := &Transfer{}
-	_, err := transfer.Decode(msg)
+	_, err := transfer.Decode(msg.Body)
 	if err != nil {
-		logger.Errorf("transfer err: %v", err)
-		return
+		return errors.Wrap(err, "process transfer failed")
 	}
 
-	logger.Infof("tranfer: %s -> %s %d", transfer.FromAccount, transfer.ToAccount, transfer.Amount)
-	fmt.Printf("TRANSFER %s %s %d", transfer.FromAccount, transfer.ToAccount, transfer.Amount)
+	// logger.Infof("tranfer: %s -> %s %d", transfer.FromAccount, transfer.ToAccount, transfer.Amount)
+	fmt.Printf("TRANSFER %s %s %d\n", transfer.FromAccount, transfer.ToAccount, transfer.Amount)
 	err = p.transaction.Transfer(transfer.FromAccount, transfer.ToAccount, transfer.Amount)
 	if err != nil {
-		logger.Errorf("transfer err: %v", err)
-		return
+		return errors.Wrap(err, "process transfer failed")
 	}
 	snapshot := p.transaction.BalancesSnapshotStdSortedString()
 	logger.Info(snapshot)
-	fmt.Printf("%s\n", snapshot)
+	// fmt.Printf("%s\n", snapshot)
+	return nil
 }

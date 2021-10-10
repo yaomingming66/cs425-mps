@@ -84,7 +84,7 @@ func (t *TotalOrding) aggregateVotesAndMulticast(votes []*ProposalItem) error {
 		agreementSeqItem.MsgID,
 	)
 
-	logger.Infof("announce %s %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
+	// logger.Infof("announce %s %d", announceAgreementMsg.MsgID, announceAgreementMsg.AgreementSeq)
 	err = t.rmulticast.Multicast(AnnounceAgreementSeqPath, announceAgreementMsg)
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func (t *TotalOrding) collectVotes(memberUpdateChannel chan interface{}) {
 	for {
 		select {
 		case vote := <-t.waitVotesChannel:
-			logger.Errorf("get vote: [%s]", vote.MsgID)
+			// logger.Errorf("get vote: [%s]", vote.MsgID)
 			_, ok := t.waitProposalCounter[vote.MsgID]
 			if !ok {
 				t.waitProposalCounter[vote.MsgID] = []*ProposalItem{}
@@ -106,7 +106,7 @@ func (t *TotalOrding) collectVotes(memberUpdateChannel chan interface{}) {
 			membersCount := t.bmulticast.MemberCount()
 
 			t.waitProposalCounter[vote.MsgID] = append(t.waitProposalCounter[vote.MsgID], vote)
-			logger.Errorf("curr vote: [%d]", len(t.waitProposalCounter[vote.MsgID]))
+			// logger.Errorf("curr vote: [%d]", len(t.waitProposalCounter[vote.MsgID]))
 			if len(t.waitProposalCounter[vote.MsgID]) < membersCount {
 				continue
 			}
@@ -201,7 +201,7 @@ func (t *TotalOrding) bindTODeliver() {
 		t.holdQueueMap[askMsg.MsgID] = item
 		heap.Push(t.holdQueue, item)
 
-		logger.Errorf("send proposal seq [%s] [%d] to [%s]", askMsg.MsgID, proposalSeqNum, askMsg.SrcID)
+		// logger.Errorf("send proposal seq [%s] [%d] to [%s]", askMsg.MsgID, proposalSeqNum, askMsg.SrcID)
 		replyProposalMsg := NewTOReplyProposalSeqMsg(t.bmulticast.group.SelfNodeID, askMsg.MsgID, proposalSeqNum)
 		err = t.bmulticast.Unicast(askMsg.SrcID, WaitProposalSeqPath, replyProposalMsg)
 		if err != nil {
@@ -233,7 +233,7 @@ func (t *TotalOrding) bindTODeliver() {
 			return errors.Wrap(err, "announce-agreement-seq failed")
 		}
 
-		logger.Infof("get announce [%d:%s] %s", announceAgreementMsg.AgreementSeq, announceAgreementMsg.ProcessID, announceAgreementMsg.MsgID)
+		// logger.Infof("get announce [%d:%s] %s", announceAgreementMsg.AgreementSeq, announceAgreementMsg.ProcessID, announceAgreementMsg.MsgID)
 
 		t.maxAgreementSeqNumOfGroupLocker.Lock()
 		t.maxAgreementSeqNumOfGroup = MaxUint64(t.maxAgreementSeqNumOfGroup, announceAgreementMsg.AgreementSeq)
@@ -250,15 +250,8 @@ func (t *TotalOrding) bindTODeliver() {
 
 		t.holdQueue.Update(item, announceAgreementMsg.ProcessID, announceAgreementMsg.AgreementSeq)
 
-		// if t.holdQueue.Len() > 0 {
-		// 	item := t.holdQueue.Peek().(*TOHoldQueueItem)
-		// 	if !item.agreed {
-		// 		logger.Fatalf("")
-		// 	}
-		// }
-
 		for t.holdQueue.Len() > 0 {
-			logger.Infof("hold queue %s", t.holdQueue.Snapshot())
+			// logger.Infof("hold queue %s", t.holdQueue.Snapshot())
 			item := t.holdQueue.Peek().(*TOHoldQueueItem)
 			if !item.agreed {
 				ok := t.bmulticast.IsNodeAlived(item.processID)

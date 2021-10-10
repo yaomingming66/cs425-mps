@@ -65,7 +65,7 @@ func ConstructGroup(nodeID string, nodePort string, configPath string) (group *m
 }
 
 func RootCMDMain(nodeID string, nodePort string, configPath string) (err error) {
-	metrics.DisableMetrics()
+	metrics.SetupMetrics()
 	group, err := ConstructGroup(nodeID, nodePort, configPath)
 	if err != nil {
 		return err

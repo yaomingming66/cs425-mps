@@ -126,7 +126,6 @@ func (b *BMulticast) Multicast(path string, v interface{}) (err error) {
 			sender.Close()
 			delete(b.senders, dstID)
 			b.memberUpdate.Publish(len(b.senders))
-			return errors.Wrap(err, "b-multicast failed")
 		}
 	}
 	return nil

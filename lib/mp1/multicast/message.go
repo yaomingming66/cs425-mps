@@ -56,13 +56,19 @@ type RMsg struct {
 	Body []byte `json:"body"`
 }
 
-func NewRMsg(path string, body []byte) *RMsg {
-	id := uuid.New().String() + SHA1(string(body))
+func NewRMsg(path string, v interface{}) (*RMsg, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	id := uuid.New().String() + "-" + SHA1(string(data))
+
 	return &RMsg{
 		ID:   id,
 		Path: path,
-		Body: body,
-	}
+		Body: data,
+	}, nil
 }
 
 func (m *RMsg) Encode() (data []byte, err error) {
@@ -177,11 +183,16 @@ type TOMsg struct {
 	Body []byte `json:"body"`
 }
 
-func NewTOMsg(path string, body []byte) (msg *TOMsg) {
+func NewTOMsg(path string, v interface{}) (msg *TOMsg, err error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
 	return &TOMsg{
 		Path: path,
-		Body: body,
-	}
+		Body: data,
+	}, nil
 }
 
 func (m *TOMsg) Encode() (data []byte, err error) {

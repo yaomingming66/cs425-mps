@@ -2,7 +2,8 @@ package multicast
 
 import (
 	"context"
-	"sync"
+
+	sync "github.com/sasha-s/go-deadlock"
 )
 
 type Node struct {
@@ -32,9 +33,5 @@ func (g *Group) TO() *TotalOrding {
 }
 
 func (g *Group) Start(ctx context.Context) (err error) {
-	g.bmulticast = NewBMulticast(g)
-	g.rmulticast = NewRMulticast(g.bmulticast)
-	g.totalOrder = NewTotalOrder(g.bmulticast, g.rmulticast)
-
 	return g.totalOrder.Start(ctx)
 }

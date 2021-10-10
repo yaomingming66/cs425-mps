@@ -9,11 +9,19 @@ import (
 	"github.com/bamboovir/cs425/lib/retry"
 )
 
-func (b *BMulticast) runClient(srcID string, dstID string, addr string, in <-chan []byte, retryInterval time.Duration) (err error) {
-	var client net.Conn
+type TCPClient struct {
+	srcID         string
+	dstID         string
+	addr          string
+	retryInterval time.Duration
+	connection    net.Conn
+}
+
+func NewTCPClient(srcID string, dstID string, addr string, retryInterval time.Duration) (c *TCPClient, err error) {
+	var connection net.Conn
 	err = retry.Retry(0, retryInterval, func() error {
 		logger.Infof("node [%s] tries to connect to the server [%s] in [%s]", srcID, dstID, addr)
-		client, err = net.DialTimeout("tcp", addr, time.Second*10)
+		connection, err = net.DialTimeout("tcp", addr, time.Second*10)
 		if err != nil {
 			logger.Errorf("node [%s] failed to connect to the server [%s] in [%s], retry", srcID, dstID, addr)
 			return err
@@ -21,35 +29,45 @@ func (b *BMulticast) runClient(srcID string, dstID string, addr string, in <-cha
 		return nil
 	})
 
-	b.startSyncWaitGroup.Done()
-
-	if err != nil {
-		return err
-	}
-
 	logger.Infof("node [%s] success connect to the server [%s] in [%s]", srcID, dstID, addr)
-	defer client.Close()
+	if err != nil {
+		return nil, err
+	}
 
 	hi, _ := types.NewHi(srcID).Encode()
 	hi = append(hi, '\n')
-	_, err = client.Write(hi)
+	_, err = connection.Write(hi)
 	if err != nil {
 		errmsg := fmt.Sprintf("client lost connection, write handshake message error: %v", err)
 		logger.Error(errmsg)
-		return fmt.Errorf(errmsg)
+		return nil, fmt.Errorf(errmsg)
 	}
 
-	for msg := range in {
-		msgCopy := make([]byte, len(msg))
-		copy(msgCopy, msg)
-		msgCopy = append(msgCopy, '\n')
-		_, err = client.Write(msgCopy)
-		if err != nil {
-			errmsg := fmt.Sprintf("client lost connection, write error: %v", err)
-			logger.Error(errmsg)
-			return fmt.Errorf(errmsg)
-		}
-	}
+	return &TCPClient{
+		srcID:         srcID,
+		dstID:         dstID,
+		addr:          addr,
+		retryInterval: retryInterval,
+		connection:    connection,
+	}, nil
+}
 
+func (c *TCPClient) Send(msg []byte) (err error) {
+	msgCopy := make([]byte, len(msg))
+	copy(msgCopy, msg)
+	msgCopy = append(msgCopy, '\n')
+	// c.connection.SetWriteDeadline(time.Now().Add(time.Second * 100))
+	_, err = c.connection.Write(msgCopy)
+	if err != nil {
+		// if os.IsTimeout(err) {
+		// 	logger.Errorf("client send timeout: %v", err)
+		// 	return nil
+		// }
+		return err
+	}
 	return nil
+}
+
+func (c *TCPClient) Close() error {
+	return c.connection.Close()
 }

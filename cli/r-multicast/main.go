@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
+	sync "github.com/sasha-s/go-deadlock"
 	"time"
 )
 

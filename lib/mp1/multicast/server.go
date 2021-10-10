@@ -3,10 +3,13 @@ package multicast
 import (
 	"net"
 
+	sync "github.com/sasha-s/go-deadlock"
+
 	"bufio"
 	"encoding/json"
 
 	"github.com/bamboovir/cs425/lib/mp1/metrics"
+	"github.com/bamboovir/cs425/lib/mp1/router"
 	"github.com/bamboovir/cs425/lib/mp1/types"
 	log "github.com/sirupsen/logrus"
 )
@@ -19,16 +22,20 @@ const (
 	CONN_TYPE = "tcp"
 )
 
-func runServer(nodeID string, addr string, out chan []byte) (err error) {
-	socket, err := net.Listen(CONN_TYPE, addr)
+func startServer(nodeID string, addr string, router *router.Router) (socket net.Listener, err error) {
+	socket, err = net.Listen(CONN_TYPE, addr)
 
 	if err != nil {
 		serverLogger.Errorf("node [%s] error listening: %v", nodeID, err)
-		return err
+		return nil, err
 	}
 
-	defer socket.Close()
 	serverLogger.Infof("node [%s] success listening on: %s", nodeID, addr)
+	return socket, nil
+}
+
+func runServer(startSyncWaitGroup *sync.WaitGroup, nodeID string, socket net.Listener, router *router.Router) {
+	defer socket.Close()
 	for {
 		conn, err := socket.Accept()
 		if err != nil {
@@ -36,11 +43,11 @@ func runServer(nodeID string, addr string, out chan []byte) (err error) {
 			continue
 		}
 
-		go handleConn(nodeID, conn, out)
+		go handleConn(startSyncWaitGroup, nodeID, conn, router)
 	}
 }
 
-func handleConn(nodeID string, conn net.Conn, out chan []byte) {
+func handleConn(startSyncWaitGroup *sync.WaitGroup, nodeID string, conn net.Conn, router *router.Router) {
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(conn)
@@ -55,11 +62,23 @@ func handleConn(nodeID string, conn net.Conn, out chan []byte) {
 		serverLogger.Infof("node [%s] connected", hi.From)
 	}
 
+	// wait for all client ready
+	startSyncWaitGroup.Wait()
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		lineBytes := []byte(line)
 		metrics.NewBandwidthLogEntry(nodeID, len(lineBytes)).Log()
-		out <- lineBytes
+
+		msg := &BMsg{}
+		_, err := msg.Decode(lineBytes)
+		if err != nil {
+			serverLogger.Errorf("server decode msg failed: %v", err)
+		}
+		err = router.Run(BMulticastPath, msg)
+		if err != nil {
+			serverLogger.Errorf("server process msg failed: %v", err)
+		}
 	}
 
 	err := scanner.Err()

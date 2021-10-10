@@ -103,20 +103,19 @@ func (t *TotalOrding) collectVotes(memberUpdateChannel chan interface{}) {
 				t.waitProposalCounter[vote.MsgID] = []*ProposalItem{}
 			}
 
-			votes := t.waitProposalCounter[vote.MsgID]
 			membersCount := t.bmulticast.MemberCount()
 
-			votes = append(votes, vote)
-
-			logger.Errorf("curr vote: [%d]", len(votes))
-			if len(votes) < membersCount {
+			t.waitProposalCounter[vote.MsgID] = append(t.waitProposalCounter[vote.MsgID], vote)
+			logger.Errorf("curr vote: [%d]", len(t.waitProposalCounter[vote.MsgID]))
+			if len(t.waitProposalCounter[vote.MsgID]) < membersCount {
 				continue
 			}
 
-			err := t.aggregateVotesAndMulticast(votes)
+			err := t.aggregateVotesAndMulticast(t.waitProposalCounter[vote.MsgID])
 			if err != nil {
 				logger.Errorf("aggregate votes and multicast failed for msg [%s]: %v", vote.MsgID, err)
 			}
+			delete(t.waitProposalCounter, vote.MsgID)
 		case membersCountI := <-memberUpdateChannel:
 			var membersCount int
 			switch t := membersCountI.(type) {
@@ -135,6 +134,7 @@ func (t *TotalOrding) collectVotes(memberUpdateChannel chan interface{}) {
 				if err != nil {
 					logger.Errorf("aggregate votes and multicast failed for msg [%s]: %v", msgID, err)
 				}
+				delete(t.waitProposalCounter, msgID)
 			}
 		}
 	}
@@ -250,21 +250,27 @@ func (t *TotalOrding) bindTODeliver() {
 
 		t.holdQueue.Update(item, announceAgreementMsg.ProcessID, announceAgreementMsg.AgreementSeq)
 
+		// if t.holdQueue.Len() > 0 {
+		// 	item := t.holdQueue.Peek().(*TOHoldQueueItem)
+		// 	if !item.agreed {
+		// 		logger.Fatalf("")
+		// 	}
+		// }
+
 		for t.holdQueue.Len() > 0 {
 			logger.Infof("hold queue %s", t.holdQueue.Snapshot())
 			item := t.holdQueue.Peek().(*TOHoldQueueItem)
-			ok := t.bmulticast.IsNodeAlived(item.processID)
-			if !ok {
-				delete(t.holdQueueMap, item.msgID)
-				heap.Pop(t.holdQueue)
-				logger.Infof("skip crashed process [%s] msg", item.processID)
-				continue
-			}
 			if !item.agreed {
+				ok := t.bmulticast.IsNodeAlived(item.processID)
+				if !ok {
+					delete(t.holdQueueMap, item.msgID)
+					heap.Pop(t.holdQueue)
+					logger.Infof("skip crashed process [%s] msg", item.processID)
+					continue
+				}
 				break
 			}
 			logger.Infof("TO deliver [%d:%s][%s]", item.proposalSeqNum, item.processID, item.msgID)
-			// fmt.Printf("TO deliver [%d:%s][%s]\n", item.proposalSeqNum, item.processID, item.msgID)
 			metrics.NewDelayLogEntry(t.bmulticast.group.SelfNodeID, item.msgID).Log()
 			delete(t.holdQueueMap, item.msgID)
 			heap.Pop(t.holdQueue)
@@ -274,7 +280,9 @@ func (t *TotalOrding) bindTODeliver() {
 				return errors.Wrap(err, "announce-agreement-seq failed")
 			}
 			err = t.router.Run(tomsg.Path, tomsg)
-			return err
+			if err != nil {
+				logger.Errorf("process err %v", err)
+			}
 		}
 
 		return nil

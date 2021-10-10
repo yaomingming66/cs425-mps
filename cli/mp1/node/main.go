@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	sync.Opts.DeadlockTimeout = time.Second * 10
+	sync.Opts.DeadlockTimeout = time.Second * 100
 	logger.SetupLogger(log.StandardLogger())
 	rootCMD := mp1.NewRootCMD()
 	if err := rootCMD.Execute(); err != nil {

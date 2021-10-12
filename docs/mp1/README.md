@@ -14,6 +14,9 @@ The cluster number we are working on is `g03`
 
 ## Instructions for building and running
 
+[pre-compiled binaries](https://github.com/cs425-ece428/mp1-monad-mp1/releases/tag/1.0.2)
+[https://github.com/cs425-ece428/mp1-monad-mp1/releases/tag/1.0.2](https://github.com/cs425-ece428/mp1-monad-mp1/releases/tag/1.0.2)
+
 ```bash
 # Quick Build
 bash ./script/unix/mp1/quick_build.bash
@@ -113,7 +116,7 @@ Note: make sure your node can run using the EXACT command given below.
 ## Design Document
 
 We use a combination of ISIS algorithm and R-Multicast to ensure Reliable Total-Ording. The ISIS algorithm can guarantee Total-Ording, R-Multicast to ensure reliable Multicast.
-In addition, we also assume that once a node loses its TCP connection, it will be evicted from the Group (A failed node will not become alive again).
+In addition, we also assume that once a node loses its TCP connection, it will be evicted from the Group (A failed node will not become alive again). There will also have a timeout (6 secs) to reject all message send from a crashed process that still not announce their final seq number.
 
 ### Proof of correctness
 
@@ -151,9 +154,9 @@ Group encapsulates `Unicast`, `B-Multicast`, `R-Multicast` and `TO-Multicast`.
 
 Parse the configuration file format
 
-#### Dispatcher
+#### Router
 
-`lib/mp1/dispatcher`
+`lib/mp1/router`
 
 A simple fully match router implementation.
 

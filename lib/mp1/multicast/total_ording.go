@@ -3,6 +3,7 @@ package multicast
 import (
 	"container/heap"
 	"context"
+	"time"
 
 	sync "github.com/sasha-s/go-deadlock"
 
@@ -18,7 +19,8 @@ const (
 )
 
 const (
-	RetryRemoveMax = 25
+	RetryRemoveMax   = 25
+	NodeCrashTimeout = 6 * time.Second
 )
 
 type ProposalItem struct {
@@ -42,6 +44,7 @@ type TotalOrding struct {
 	waitProposalCounter             map[string][]*ProposalItem
 	waitProposalCounterLock         *sync.Mutex
 	waitVotesChannel                chan *ProposalItem
+	crashNodeTimeout                map[string]time.Time
 }
 
 func NewTotalOrder(b *BMulticast, r *RMulticast) *TotalOrding {
@@ -62,6 +65,7 @@ func NewTotalOrder(b *BMulticast, r *RMulticast) *TotalOrding {
 		waitProposalCounter:             map[string][]*ProposalItem{},
 		waitProposalCounterLock:         &sync.Mutex{},
 		waitVotesChannel:                make(chan *ProposalItem, 10000),
+		crashNodeTimeout:                map[string]time.Time{},
 	}
 }
 
@@ -196,12 +200,11 @@ func (t *TotalOrding) bindTODeliver() {
 		defer t.holdQueueLocker.Unlock()
 
 		item := &TOHoldQueueItem{
-			body:             askMsg.Body,
-			proposalSeqNum:   proposalSeqNum,
-			msgID:            askMsg.MsgID,
-			processID:        askMsg.SrcID,
-			agreed:           false,
-			retryRemoveCount: 0,
+			body:           askMsg.Body,
+			proposalSeqNum: proposalSeqNum,
+			msgID:          askMsg.MsgID,
+			processID:      askMsg.SrcID,
+			agreed:         false,
 		}
 		t.holdQueueMap[askMsg.MsgID] = item
 		heap.Push(t.holdQueue, item)
@@ -261,16 +264,25 @@ func (t *TotalOrding) bindTODeliver() {
 			if !item.agreed {
 				ok := t.bmulticast.IsNodeAlived(item.processID)
 				if !ok {
-					delete(t.holdQueueMap, item.msgID)
-					heap.Pop(t.holdQueue)
-					logger.Infof("skip crashed process [%s] msg", item.processID)
-					continue
-					// item.retryRemoveCount += 1
-					// if item.retryRemoveCount >= RetryRemoveMax {
-					// }
+					crashTime, tok := t.crashNodeTimeout[item.processID]
+
+					if !tok {
+						t.crashNodeTimeout[item.processID] = time.Now()
+						break
+					}
+
+					timeDiff := time.Since(crashTime)
+
+					if timeDiff > NodeCrashTimeout {
+						delete(t.holdQueueMap, item.msgID)
+						heap.Pop(t.holdQueue)
+						logger.Infof("skip crashed process [%s] msg", item.processID)
+						break
+					}
 				}
 				break
 			}
+
 			logger.Infof("TO deliver [%d:%s][%s]", item.proposalSeqNum, item.processID, item.msgID)
 			metrics.NewDelayLogEntry(t.bmulticast.group.SelfNodeID, item.msgID).Log()
 			delete(t.holdQueueMap, item.msgID)
